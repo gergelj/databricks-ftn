@@ -29,6 +29,25 @@ resource "azurerm_databricks_workspace" "this" {
   ]
 }
 
+# Workspace-level legacy settings. Running clusters and SQL warehouses must be restarted to pick them up.
+
+# Disables direct Hive metastore access, external location fallback mode and Databricks Runtime versions older
+# than 13.3 LTS in this workspace.
+resource "databricks_disable_legacy_access_setting" "this" {
+  disable_legacy_access {
+    value = true
+  }
+  depends_on = [databricks_metastore_assignment.this]
+}
+
+# Disables access to the DBFS root and DBFS mounts in this workspace.
+resource "databricks_disable_legacy_dbfs_setting" "this" {
+  disable_legacy_dbfs {
+    value = true
+  }
+  depends_on = [databricks_metastore_assignment.this]
+}
+
 # Admin group: an account-level group holding every user in admin_users. It is made workspace admin and, when this
 # template creates the metastore, the metastore owner (= metastore admin). Skipped when admin_users is empty.
 
