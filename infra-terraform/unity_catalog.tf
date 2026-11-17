@@ -138,3 +138,10 @@ resource "databricks_grant" "storage_credential_admin" {
   privileges         = ["ALL_PRIVILEGES"]
   depends_on         = [databricks_mws_permission_assignment.workspace_access]
 }
+
+resource "databricks_default_namespace_setting" "this" {
+  count = var.new_catalog ? 1 : 0
+  namespace {
+    value = databricks_catalog.uc_quickstart_sandbox[0].name
+  }
+}
