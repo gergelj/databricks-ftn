@@ -67,6 +67,35 @@ resource "azurerm_role_assignment" "db_mi_data_contributor" {
   principal_id         = azurerm_databricks_access_connector.db_mi[0].identity[0].principal_id
 }
 
+// Additional role assignments (permissions) to be able to use file arrival triggers
+resource "azurerm_role_assignment" "storage_account_contributor" {
+  count                = var.new_catalog ? 1 : 0
+  scope                = azurerm_storage_account.db_uc_catalog[0].id
+  role_definition_name = "Storage Account Contributor"
+  principal_id         = azurerm_databricks_access_connector.db_mi[0].identity[0].principal_id
+}
+
+resource "azurerm_role_assignment" "storage_queue_data_contributor" {
+  count                = var.new_catalog ? 1 : 0
+  scope                = azurerm_storage_account.db_uc_catalog[0].id
+  role_definition_name = "Storage Queue Data Contributor"
+  principal_id         = azurerm_databricks_access_connector.db_mi[0].identity[0].principal_id
+}
+
+resource "azurerm_role_assignment" "eventgrid_eventsubscription_contributor" {
+  count = var.new_catalog ? 1 : 0
+  scope                = local.resource_group_id
+  role_definition_name = "EventGrid EventSubscription Contributor"
+  principal_id         = azurerm_databricks_access_connector.db_mi[0].identity[0].principal_id
+}
+
+resource "azurerm_role_assignment" "eventgrid_data_contributor" {
+  count = var.new_catalog ? 1 : 0
+  scope                = local.resource_group_id
+  role_definition_name = "EventGrid Data Contributor"
+  principal_id         = azurerm_databricks_access_connector.db_mi[0].identity[0].principal_id
+}
+
 // Create Databricks Storage Credential
 resource "databricks_storage_credential" "db_uc_storage_cred" {
   count = var.new_catalog ? 1 : 0
