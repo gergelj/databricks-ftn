@@ -14,7 +14,7 @@ data "databricks_spark_version" "latest_lts" {
 // No cluster policy: the settings the built-in Personal Compute policy would enforce are set explicitly.
 resource "databricks_cluster" "uc_single_node" {
   count                   = var.create_cluster ? 1 : 0
-  cluster_name            = "${local.prefix}-uc-cluster"
+  cluster_name            = "uc-cluster"
   spark_version           = data.databricks_spark_version.latest_lts[0].id
   node_type_id            = var.node_type_id
   autotermination_minutes = var.cluster_autotermination_minutes
