@@ -1,0 +1,36 @@
+# Runs the data generator on serverless compute. Start it before the break:
+#   databricks bundle run data_generator -t dev
+#   databricks bundle run data_generator -t dev --params duration_minutes=60
+# One-off drops (one file, then stop):
+#   --params mode=nightly_restaurants          new restaurants CSV snapshot
+#   --params mode=customer_changes             CDC burst: 5 moves, 1 phone change, 1 new customer, 1 delete
+#   --params mode=customer_changes,customer_changes=10
+# Planned failures:
+#   --params mode=bad_records | mode=late_event | mode=schema_change
+resources:
+  jobs:
+    data_generator:
+      name: food_delivery_data_generator
+      description: Writes order, GPS, customer and restaurant files into the landing volume.
+      max_concurrent_runs: 3
+      parameters:
+        - name: catalog
+          default: ${var.catalog}
+        - name: mode
+          default: stream
+        - name: duration_minutes
+          default: "30"
+        - name: interval_seconds
+          default: "5"
+        - name: orders_per_batch
+          default: "6"
+        - name: with_tip
+          default: "false"
+        - name: customer_changes
+          default: "5"
+        - name: restaurants_source
+          default: ${workspace.file_path}/data/restaurants.csv
+      tasks:
+        - task_key: generate
+          notebook_task:
+            notebook_path: ../src/generator/generate_events.py

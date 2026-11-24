@@ -1,0 +1,21 @@
+# Streaming pipeline: orders, courier GPS and customer changes, processed continuously.
+# A continuous pipeline keeps running (and costs serverless compute) until you stop it:
+#   databricks bundle run food_delivery_streaming -t dev     # start
+#   databricks pipelines stop <pipeline-id>                    # stop (ID: databricks bundle summary -t dev)
+# Batch vs streaming is a setting, not a different codebase. To run this pipeline as triggered updates:
+#   databricks bundle deploy -t dev --var streaming_continuous=false
+resources:
+  pipelines:
+    food_delivery_streaming:
+      name: food_delivery_streaming
+      catalog: ${var.catalog}
+      schema: silver
+      serverless: true
+      channel: CURRENT
+      continuous: ${var.streaming_continuous}
+      root_path: ../src/pipelines/streaming
+      libraries:
+        - glob:
+            include: ../src/pipelines/streaming/**
+      configuration:
+        landing_path: /Volumes/${var.catalog}/landing/raw

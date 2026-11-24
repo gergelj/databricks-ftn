@@ -1,0 +1,48 @@
+# Between dry runs: stop streaming, delete everything generated, backfill again, rebuild both pipelines.
+#   databricks bundle run food_delivery_reset -t dev --params confirm=yes
+resources:
+  jobs:
+    food_delivery_reset:
+      name: food_delivery_reset
+      description: DESTRUCTIVE. Deletes generated data, regenerates history and fully refreshes both pipelines. Needs confirm=yes.
+      max_concurrent_runs: 1
+      parameters:
+        - name: confirm
+          default: "no"
+        - name: catalog
+          default: ${var.catalog}
+        - name: mode
+          default: backfill
+        - name: backfill_days
+          default: "7"
+        - name: restaurants_source
+          default: ${workspace.file_path}/data/restaurants.csv
+        - name: streaming_pipeline_id
+          default: ${resources.pipelines.food_delivery_streaming.id}
+        - name: full_refresh
+          default: "true"
+      tasks:
+        - task_key: delete_generated_data
+          notebook_task:
+            notebook_path: ../src/setup/99_reset.py
+        - task_key: stop_streaming_pipeline
+          depends_on:
+            - task_key: delete_generated_data
+          notebook_task:
+            notebook_path: ../src/setup/stop_streaming_pipeline.py
+        - task_key: backfill_history
+          depends_on:
+            - task_key: stop_streaming_pipeline
+          notebook_task:
+            notebook_path: ../src/generator/generate_events.py
+        - task_key: full_refresh_streaming_pipeline
+          depends_on:
+            - task_key: backfill_history
+          notebook_task:
+            notebook_path: ../src/setup/start_streaming_pipeline.py
+        - task_key: full_refresh_batch_pipeline
+          depends_on:
+            - task_key: full_refresh_streaming_pipeline
+          pipeline_task:
+            pipeline_id: ${resources.pipelines.food_delivery_batch.id}
+            full_refresh: true

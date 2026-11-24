@@ -1,0 +1,55 @@
+# Declarative Automation Bundle for the Databricks x FTN demo:
+# a food delivery startup in Novi Sad, with batch and streaming data engineering.
+#
+#   databricks bundle validate -t dev
+#   databricks bundle deploy -t dev
+#   databricks bundle run food_delivery_setup -t dev
+#
+# Terraform (../infra-terraform) builds the platform; this bundle deploys the data project on it.
+bundle:
+  name: food_delivery_demo
+
+include:
+  - resources/*.yml
+
+variables:
+  catalog:
+    description: Unity Catalog catalog for all demo schemas (landing, bronze, silver, gold, sandbox)
+    default: databricks_ftn_catalog
+  admin_group:
+    description: Account group that sees unmasked PII (created by Terraform)
+    default: databricks-ftn-admins
+  streaming_continuous:
+    description: true = the streaming pipeline runs continuously, false = triggered updates. Same code, different trigger.
+    default: true
+
+targets:
+  # Personal development copy: resources are prefixed with "[dev <user>]" and deployed to your user folder.
+  # Not "mode: development" on purpose: that mode turns continuous pipelines into triggered ones and
+  # pauses schedules and file-arrival triggers, while this demo needs all three live. The presets keep
+  # the parts of development mode we want.
+  dev:
+    default: true
+    workspace:
+      host: https://adb-7405608329558361.1.azuredatabricks.net
+    presets:
+      name_prefix: "[dev ${workspace.current_user.short_name}] "
+      pipelines_development: true
+      tags:
+        dev: ${workspace.current_user.short_name}
+
+  # Production: in a real setup this is a separate workspace (another Terraform variables file)
+  # with its own catalog, deployed from CI/CD by a service principal.
+  prod:
+    mode: production
+    workspace:
+      host: https://adb-7405608329558361.1.azuredatabricks.net
+      # One fixed copy per environment. With CI/CD this is the service principal's folder.
+      root_path: /Workspace/Users/${workspace.current_user.userName}/.bundle/${bundle.name}/${bundle.target}
+    variables:
+      catalog: databricks_ftn_prod
+    permissions:
+      - group_name: ${var.admin_group}
+        level: CAN_MANAGE
+      - user_name: ${workspace.current_user.userName}
+        level: CAN_MANAGE

@@ -1,0 +1,20 @@
+# Batch pipeline: the nightly restaurant catalog and the gold reports (revenue, lateness, deliveries, customers).
+# Triggered: on demand, every morning (food_delivery_daily_batch) and when a new restaurants file arrives
+# (food_delivery_on_new_restaurant_file).
+#   databricks bundle run food_delivery_batch -t dev
+resources:
+  pipelines:
+    food_delivery_batch:
+      name: food_delivery_batch
+      catalog: ${var.catalog}
+      schema: gold
+      serverless: true
+      channel: CURRENT
+      continuous: false
+      root_path: ../src/pipelines/batch
+      libraries:
+        - glob:
+            include: ../src/pipelines/batch/**
+      configuration:
+        landing_path: /Volumes/${var.catalog}/landing/raw
+        pii_mask_function: ${var.catalog}.gold.mask_pii
