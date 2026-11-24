@@ -167,9 +167,11 @@ Both are bundle resources and use the SQL warehouse `Serverless Starter Warehous
 by name) and the target's catalog (`dataset_catalog` for the dashboard, `${var.catalog}` in the Genie tables).
 
 - **Dashboard** `Food delivery Novi Sad` (`resources/food_delivery.dashboard.yml`,
-  `src/dashboards/food_delivery.lvdash.json`). Page *Overview*: district filter, delivered orders, share of late
-  deliveries, revenue, late deliveries per district and per hour, revenue per restaurant, and the reviews of late
-  orders. Page *Live*: the streaming 5-minute table for the last 3 hours (fills while the generator runs).
+  `src/dashboards/food_delivery.lvdash.json`), four pages with date, district and cuisine filters:
+  *Overview* (KPIs with daily trend, orders per day on time vs late, revenue per day, orders per hour, payment
+  methods), *Late deliveries* (district × hour heatmap, late share per district, how late, rating on time vs late,
+  customer reviews), *Restaurants* (revenue per restaurant and cuisine, restaurant scorecard) and *Live* (the
+  streaming 5-minute table for the last 3 hours, fills while the generator runs).
   `embed_credentials: false`, so viewers query with their own permissions (analysts: gold only, masked PII).
 - **Genie space** `Food delivery Novi Sad` (`resources/food_delivery.genie.yml`): the four gold tables without
   personal data (`deliveries`, `late_deliveries_per_district`, `daily_revenue_per_restaurant`,

@@ -1,28 +1,44 @@
 {
   "datasets": [
     {
-      "name": "ds_deliveries",
-      "displayName": "Deliveries",
+      "name": "ds_orders",
+      "displayName": "Orders (one row per delivered order)",
       "queryLines": [
-        "SELECT order_id, order_date, order_ts, hour(order_ts) AS order_hour, delivery_district, restaurant_name, cuisine, CASE WHEN is_late THEN 1 ELSE 0 END AS late_flag, delivery_minutes, delay_minutes, total_amount_rsd, rating FROM gold.deliveries"
+        "SELECT order_id, order_date, order_ts, hour(order_ts) AS order_hour, ",
+        "date_format(order_ts, 'E') AS weekday, delivery_district, restaurant_name, cuisine, payment_method, ",
+        "item_count, total_amount_rsd, delivery_minutes, delay_minutes, ",
+        "CASE WHEN is_late THEN 1 ELSE 0 END AS late_flag, ",
+        "CASE WHEN is_late THEN 'Late' ELSE 'On time' END AS delivery_status, ",
+        "CASE WHEN delay_minutes <= -10 THEN '1. 10+ min early' WHEN delay_minutes <= 0 THEN '2. On time' ",
+        "WHEN delay_minutes <= 5 THEN '3. 1-5 min late' WHEN delay_minutes <= 10 THEN '4. 6-10 min late' ",
+        "WHEN delay_minutes <= 15 THEN '5. 11-15 min late' ELSE '6. 16+ min late' END AS delay_bucket, ",
+        "CASE WHEN is_late THEN delay_minutes END AS delay_if_late, ",
+        "rating, review_text ",
+        "FROM gold.deliveries"
       ],
       "catalog": "databricks_ftn_catalog",
       "schema": "gold"
     },
     {
-      "name": "ds_late_reviews",
-      "displayName": "Late orders with a review",
+      "name": "ds_restaurant_scorecard",
+      "displayName": "Restaurant scorecard (all days)",
       "queryLines": [
-        "SELECT order_id, order_ts, delivery_district, restaurant_name, delay_minutes, rating, review_text FROM gold.deliveries WHERE is_late AND review_text IS NOT NULL"
+        "SELECT restaurant_name, cuisine, count(*) AS orders, round(sum(total_amount_rsd)) AS revenue_rsd, ",
+        "round(avg(total_amount_rsd)) AS avg_order_rsd, round(100 * avg(CASE WHEN is_late THEN 1 ELSE 0 END), 1) AS late_pct, ",
+        "round(avg(rating), 2) AS avg_rating ",
+        "FROM gold.deliveries GROUP BY restaurant_name, cuisine"
       ],
       "catalog": "databricks_ftn_catalog",
       "schema": "gold"
     },
     {
       "name": "ds_live",
-      "displayName": "Live delivery time (5-minute windows)",
+      "displayName": "Live delivery time (5-minute windows, last 3 hours)",
       "queryLines": [
-        "SELECT window_start, delivery_district, deliveries, avg_delivery_minutes, late_deliveries FROM gold.avg_delivery_time_per_district_5min WHERE window_start >= timestampadd(HOUR, -3, (SELECT max(window_start) FROM gold.avg_delivery_time_per_district_5min))"
+        "SELECT window_start, delivery_district, deliveries, avg_delivery_minutes, late_deliveries, ",
+        "avg_delivery_minutes * deliveries AS weighted_minutes ",
+        "FROM gold.avg_delivery_time_per_district_5min ",
+        "WHERE window_start >= timestampadd(HOUR, -3, (SELECT max(window_start) FROM gold.avg_delivery_time_per_district_5min))"
       ],
       "catalog": "databricks_ftn_catalog",
       "schema": "gold"
@@ -33,44 +49,77 @@
       "name": "overview",
       "displayName": "Overview",
       "pageType": "PAGE_TYPE_CANVAS",
+      "layoutVersion": "GRID_V1",
       "layout": [
         {
           "widget": {
-            "name": "title",
+            "name": "ov-header",
             "multilineTextboxSpec": {
               "lines": [
-                "## Food delivery Novi Sad: why are deliveries late, and which restaurants make money?"
+                "# Food delivery · Novi Sad\n",
+                "\n",
+                "Orders, deliveries and revenue from the gold layer, refreshed by the batch and streaming pipelines. Use the filters to zoom into a district or a cuisine."
               ]
             }
           },
           "position": {
             "x": 0,
             "y": 0,
-            "width": 6,
+            "width": 12,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "ov-date",
+            "queries": [
+              {
+                "name": "f_ov-date_ds_orders",
+                "query": {
+                  "datasetName": "ds_orders",
+                  "fields": [
+                    {
+                      "name": "order_date",
+                      "expression": "`order_date`"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "filter-date-range-picker",
+              "encodings": {
+                "fields": [
+                  {
+                    "fieldName": "order_date",
+                    "displayName": "Order date",
+                    "queryName": "f_ov-date_ds_orders"
+                  }
+                ]
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Order date"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 2,
+            "width": 4,
             "height": 1
           }
         },
         {
           "widget": {
-            "name": "filter-district",
+            "name": "ov-district",
             "queries": [
               {
-                "name": "f_deliveries",
+                "name": "f_ov-district_ds_orders",
                 "query": {
-                  "datasetName": "ds_deliveries",
-                  "fields": [
-                    {
-                      "name": "delivery_district",
-                      "expression": "`delivery_district`"
-                    }
-                  ],
-                  "disaggregated": false
-                }
-              },
-              {
-                "name": "f_reviews",
-                "query": {
-                  "datasetName": "ds_late_reviews",
+                  "datasetName": "ds_orders",
                   "fields": [
                     {
                       "name": "delivery_district",
@@ -89,12 +138,7 @@
                   {
                     "fieldName": "delivery_district",
                     "displayName": "District",
-                    "queryName": "f_deliveries"
-                  },
-                  {
-                    "fieldName": "delivery_district",
-                    "displayName": "District",
-                    "queryName": "f_reviews"
+                    "queryName": "f_ov-district_ds_orders"
                   }
                 ]
               },
@@ -105,24 +149,189 @@
             }
           },
           "position": {
-            "x": 0,
-            "y": 1,
-            "width": 6,
+            "x": 4,
+            "y": 2,
+            "width": 4,
             "height": 1
           }
         },
         {
           "widget": {
-            "name": "kpi-orders",
+            "name": "ov-cuisine",
+            "queries": [
+              {
+                "name": "f_ov-cuisine_ds_orders",
+                "query": {
+                  "datasetName": "ds_orders",
+                  "fields": [
+                    {
+                      "name": "cuisine",
+                      "expression": "`cuisine`"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "filter-multi-select",
+              "encodings": {
+                "fields": [
+                  {
+                    "fieldName": "cuisine",
+                    "displayName": "Cuisine",
+                    "queryName": "f_ov-cuisine_ds_orders"
+                  }
+                ]
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Cuisine"
+              }
+            }
+          },
+          "position": {
+            "x": 8,
+            "y": 2,
+            "width": 4,
+            "height": 1
+          }
+        },
+        {
+          "widget": {
+            "name": "ov-orders",
             "queries": [
               {
                 "name": "main_query",
                 "query": {
-                  "datasetName": "ds_deliveries",
+                  "datasetName": "ds_orders",
                   "fields": [
+                    {
+                      "name": "daily(order_date)",
+                      "expression": "DATE_TRUNC(\"DAY\", `order_date`)"
+                    },
                     {
                       "name": "count(order_id)",
                       "expression": "COUNT(`order_id`)"
+                    }
+                  ],
+                  "disaggregated": false,
+                  "orders": [
+                    {
+                      "direction": "DESC",
+                      "expression": "DATE_TRUNC(\"DAY\", `order_date`)"
+                    }
+                  ]
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "count(order_id)",
+                  "displayName": "Orders (last day)",
+                  "format": {
+                    "type": "number-plain",
+                    "decimalPlaces": {
+                      "type": "max",
+                      "places": 0
+                    },
+                    "abbreviation": "compact"
+                  }
+                },
+                "period": {
+                  "fieldName": "daily(order_date)"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Orders (last day)"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 3,
+            "width": 2,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "ov-revenue",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_orders",
+                  "fields": [
+                    {
+                      "name": "daily(order_date)",
+                      "expression": "DATE_TRUNC(\"DAY\", `order_date`)"
+                    },
+                    {
+                      "name": "sum(total_amount_rsd)",
+                      "expression": "SUM(`total_amount_rsd`)"
+                    }
+                  ],
+                  "disaggregated": false,
+                  "orders": [
+                    {
+                      "direction": "DESC",
+                      "expression": "DATE_TRUNC(\"DAY\", `order_date`)"
+                    }
+                  ]
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "sum(total_amount_rsd)",
+                  "displayName": "Revenue, RSD (last day)",
+                  "format": {
+                    "type": "number-plain",
+                    "decimalPlaces": {
+                      "type": "max",
+                      "places": 1
+                    },
+                    "abbreviation": "compact"
+                  }
+                },
+                "period": {
+                  "fieldName": "daily(order_date)"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Revenue, RSD (last day)"
+              }
+            }
+          },
+          "position": {
+            "x": 2,
+            "y": 3,
+            "width": 2,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "ov-aov",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_orders",
+                  "fields": [
+                    {
+                      "name": "avg(total_amount_rsd)",
+                      "expression": "AVG(`total_amount_rsd`)"
                     }
                   ],
                   "disaggregated": false
@@ -134,31 +343,583 @@
               "widgetType": "counter",
               "encodings": {
                 "value": {
-                  "fieldName": "count(order_id)",
-                  "displayName": "Delivered orders"
+                  "fieldName": "avg(total_amount_rsd)",
+                  "displayName": "Avg order value (RSD)",
+                  "format": {
+                    "type": "number-plain",
+                    "decimalPlaces": {
+                      "type": "max",
+                      "places": 0
+                    },
+                    "abbreviation": "compact"
+                  }
                 }
               },
               "frame": {
                 "showTitle": true,
-                "title": "Delivered orders"
+                "title": "Avg order value (RSD)"
               }
             }
           },
           "position": {
-            "x": 0,
-            "y": 2,
+            "x": 4,
+            "y": 3,
             "width": 2,
             "height": 3
           }
         },
         {
           "widget": {
-            "name": "kpi-late",
+            "name": "ov-late",
             "queries": [
               {
                 "name": "main_query",
                 "query": {
-                  "datasetName": "ds_deliveries",
+                  "datasetName": "ds_orders",
+                  "fields": [
+                    {
+                      "name": "daily(order_date)",
+                      "expression": "DATE_TRUNC(\"DAY\", `order_date`)"
+                    },
+                    {
+                      "name": "avg(late_flag)",
+                      "expression": "AVG(`late_flag`)"
+                    }
+                  ],
+                  "disaggregated": false,
+                  "orders": [
+                    {
+                      "direction": "DESC",
+                      "expression": "DATE_TRUNC(\"DAY\", `order_date`)"
+                    }
+                  ]
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "avg(late_flag)",
+                  "displayName": "Late share (last day)",
+                  "format": {
+                    "type": "number-percent",
+                    "decimalPlaces": {
+                      "type": "max",
+                      "places": 1
+                    }
+                  }
+                },
+                "period": {
+                  "fieldName": "daily(order_date)"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Late share (last day)",
+                "showDescription": true,
+                "description": "Share of orders delivered after the promised time"
+              }
+            }
+          },
+          "position": {
+            "x": 6,
+            "y": 3,
+            "width": 2,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "ov-minutes",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_orders",
+                  "fields": [
+                    {
+                      "name": "avg(delivery_minutes)",
+                      "expression": "AVG(`delivery_minutes`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "avg(delivery_minutes)",
+                  "displayName": "Avg delivery time (min)",
+                  "format": {
+                    "type": "number-plain",
+                    "decimalPlaces": {
+                      "type": "max",
+                      "places": 1
+                    }
+                  }
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Avg delivery time (min)"
+              }
+            }
+          },
+          "position": {
+            "x": 8,
+            "y": 3,
+            "width": 2,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "ov-rating",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_orders",
+                  "fields": [
+                    {
+                      "name": "avg(rating)",
+                      "expression": "AVG(`rating`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "avg(rating)",
+                  "displayName": "Avg rating (1-5)",
+                  "format": {
+                    "type": "number-plain",
+                    "decimalPlaces": {
+                      "type": "max",
+                      "places": 1
+                    }
+                  }
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Avg rating (1-5)"
+              }
+            }
+          },
+          "position": {
+            "x": 10,
+            "y": 3,
+            "width": 2,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "ov-orders-per-day",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_orders",
+                  "fields": [
+                    {
+                      "name": "order_date",
+                      "expression": "`order_date`"
+                    },
+                    {
+                      "name": "delivery_status",
+                      "expression": "`delivery_status`"
+                    },
+                    {
+                      "name": "count(order_id)",
+                      "expression": "COUNT(`order_id`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "order_date",
+                  "scale": {
+                    "type": "temporal"
+                  },
+                  "displayName": "Day"
+                },
+                "y": {
+                  "fieldName": "count(order_id)",
+                  "scale": {
+                    "type": "quantitative"
+                  },
+                  "displayName": "Orders"
+                },
+                "color": {
+                  "fieldName": "delivery_status",
+                  "scale": {
+                    "type": "categorical",
+                    "mappings": [
+                      {
+                        "value": "On time",
+                        "color": "#00A972"
+                      },
+                      {
+                        "value": "Late",
+                        "color": "#FF3621"
+                      }
+                    ]
+                  },
+                  "displayName": "Delivery"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Orders per day",
+                "showDescription": true,
+                "description": "Delivered orders, split by on time vs late"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 6,
+            "width": 8,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "ov-payment",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_orders",
+                  "fields": [
+                    {
+                      "name": "payment_method",
+                      "expression": "`payment_method`"
+                    },
+                    {
+                      "name": "count(order_id)",
+                      "expression": "COUNT(`order_id`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "pie",
+              "encodings": {
+                "angle": {
+                  "fieldName": "count(order_id)",
+                  "scale": {
+                    "type": "quantitative"
+                  },
+                  "displayName": "Orders"
+                },
+                "color": {
+                  "fieldName": "payment_method",
+                  "scale": {
+                    "type": "categorical"
+                  },
+                  "displayName": "Payment"
+                },
+                "label": {
+                  "show": true
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Payment method"
+              }
+            }
+          },
+          "position": {
+            "x": 8,
+            "y": 6,
+            "width": 4,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "ov-revenue-per-day",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_orders",
+                  "fields": [
+                    {
+                      "name": "order_date",
+                      "expression": "`order_date`"
+                    },
+                    {
+                      "name": "sum(total_amount_rsd)",
+                      "expression": "SUM(`total_amount_rsd`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "area",
+              "encodings": {
+                "x": {
+                  "fieldName": "order_date",
+                  "scale": {
+                    "type": "temporal"
+                  },
+                  "displayName": "Day"
+                },
+                "y": {
+                  "fieldName": "sum(total_amount_rsd)",
+                  "scale": {
+                    "type": "quantitative"
+                  },
+                  "displayName": "Revenue (RSD)",
+                  "format": {
+                    "type": "number-plain",
+                    "decimalPlaces": {
+                      "type": "max",
+                      "places": 1
+                    },
+                    "abbreviation": "compact"
+                  }
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Revenue per day (RSD)"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 12,
+            "width": 6,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "ov-orders-per-hour",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_orders",
+                  "fields": [
+                    {
+                      "name": "order_hour",
+                      "expression": "`order_hour`"
+                    },
+                    {
+                      "name": "delivery_status",
+                      "expression": "`delivery_status`"
+                    },
+                    {
+                      "name": "count(order_id)",
+                      "expression": "COUNT(`order_id`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "order_hour",
+                  "scale": {
+                    "type": "categorical",
+                    "sort": {
+                      "by": "natural-order"
+                    }
+                  },
+                  "displayName": "Hour of day"
+                },
+                "y": {
+                  "fieldName": "count(order_id)",
+                  "scale": {
+                    "type": "quantitative"
+                  },
+                  "displayName": "Orders"
+                },
+                "color": {
+                  "fieldName": "delivery_status",
+                  "scale": {
+                    "type": "categorical",
+                    "mappings": [
+                      {
+                        "value": "On time",
+                        "color": "#00A972"
+                      },
+                      {
+                        "value": "Late",
+                        "color": "#FF3621"
+                      }
+                    ]
+                  },
+                  "displayName": "Delivery"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Orders per hour of the day",
+                "showDescription": true,
+                "description": "Lunch and dinner peaks"
+              }
+            }
+          },
+          "position": {
+            "x": 6,
+            "y": 12,
+            "width": 6,
+            "height": 6
+          }
+        }
+      ]
+    },
+    {
+      "name": "late",
+      "displayName": "Late deliveries",
+      "pageType": "PAGE_TYPE_CANVAS",
+      "layoutVersion": "GRID_V1",
+      "layout": [
+        {
+          "widget": {
+            "name": "lt-header",
+            "multilineTextboxSpec": {
+              "lines": [
+                "# Why are deliveries late?\n",
+                "\n",
+                "Where and when orders arrive after the promised time, by how much, and what customers wrote about it."
+              ]
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 0,
+            "width": 12,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "lt-date",
+            "queries": [
+              {
+                "name": "f_lt-date_ds_orders",
+                "query": {
+                  "datasetName": "ds_orders",
+                  "fields": [
+                    {
+                      "name": "order_date",
+                      "expression": "`order_date`"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "filter-date-range-picker",
+              "encodings": {
+                "fields": [
+                  {
+                    "fieldName": "order_date",
+                    "displayName": "Order date",
+                    "queryName": "f_lt-date_ds_orders"
+                  }
+                ]
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Order date"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 2,
+            "width": 6,
+            "height": 1
+          }
+        },
+        {
+          "widget": {
+            "name": "lt-district",
+            "queries": [
+              {
+                "name": "f_lt-district_ds_orders",
+                "query": {
+                  "datasetName": "ds_orders",
+                  "fields": [
+                    {
+                      "name": "delivery_district",
+                      "expression": "`delivery_district`"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "filter-multi-select",
+              "encodings": {
+                "fields": [
+                  {
+                    "fieldName": "delivery_district",
+                    "displayName": "District",
+                    "queryName": "f_lt-district_ds_orders"
+                  }
+                ]
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "District"
+              }
+            }
+          },
+          "position": {
+            "x": 6,
+            "y": 2,
+            "width": 6,
+            "height": 1
+          }
+        },
+        {
+          "widget": {
+            "name": "lt-late-pct",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_orders",
                   "fields": [
                     {
                       "name": "avg(late_flag)",
@@ -192,24 +953,24 @@
             }
           },
           "position": {
-            "x": 2,
-            "y": 2,
-            "width": 2,
+            "x": 0,
+            "y": 3,
+            "width": 4,
             "height": 3
           }
         },
         {
           "widget": {
-            "name": "kpi-revenue",
+            "name": "lt-late-count",
             "queries": [
               {
                 "name": "main_query",
                 "query": {
-                  "datasetName": "ds_deliveries",
+                  "datasetName": "ds_orders",
                   "fields": [
                     {
-                      "name": "sum(total_amount_rsd)",
-                      "expression": "SUM(`total_amount_rsd`)"
+                      "name": "sum(late_flag)",
+                      "expression": "SUM(`late_flag`)"
                     }
                   ],
                   "disaggregated": false
@@ -221,31 +982,170 @@
               "widgetType": "counter",
               "encodings": {
                 "value": {
-                  "fieldName": "sum(total_amount_rsd)",
-                  "displayName": "Revenue (RSD)"
+                  "fieldName": "sum(late_flag)",
+                  "displayName": "Late orders",
+                  "format": {
+                    "type": "number-plain",
+                    "decimalPlaces": {
+                      "type": "max",
+                      "places": 0
+                    },
+                    "abbreviation": "compact"
+                  }
                 }
               },
               "frame": {
                 "showTitle": true,
-                "title": "Revenue (RSD)"
+                "title": "Late orders"
               }
             }
           },
           "position": {
             "x": 4,
-            "y": 2,
-            "width": 2,
+            "y": 3,
+            "width": 4,
             "height": 3
           }
         },
         {
           "widget": {
-            "name": "late-by-district",
+            "name": "lt-delay",
             "queries": [
               {
                 "name": "main_query",
                 "query": {
-                  "datasetName": "ds_deliveries",
+                  "datasetName": "ds_orders",
+                  "fields": [
+                    {
+                      "name": "avg(delay_if_late)",
+                      "expression": "AVG(`delay_if_late`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "avg(delay_if_late)",
+                  "displayName": "Avg minutes late (late orders)",
+                  "format": {
+                    "type": "number-plain",
+                    "decimalPlaces": {
+                      "type": "max",
+                      "places": 1
+                    }
+                  }
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Avg minutes late (late orders)"
+              }
+            }
+          },
+          "position": {
+            "x": 8,
+            "y": 3,
+            "width": 4,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "lt-heatmap",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_orders",
+                  "fields": [
+                    {
+                      "name": "order_hour",
+                      "expression": "`order_hour`"
+                    },
+                    {
+                      "name": "delivery_district",
+                      "expression": "`delivery_district`"
+                    },
+                    {
+                      "name": "avg(late_flag)",
+                      "expression": "AVG(`late_flag`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "heatmap",
+              "encodings": {
+                "x": {
+                  "fieldName": "order_hour",
+                  "scale": {
+                    "type": "categorical",
+                    "sort": {
+                      "by": "natural-order"
+                    }
+                  },
+                  "displayName": "Hour of day"
+                },
+                "y": {
+                  "fieldName": "delivery_district",
+                  "scale": {
+                    "type": "categorical"
+                  },
+                  "displayName": "District"
+                },
+                "color": {
+                  "fieldName": "avg(late_flag)",
+                  "scale": {
+                    "type": "quantitative",
+                    "colorRamp": {
+                      "mode": "custom-sequential",
+                      "colors": {
+                        "start": "#FFF1E0",
+                        "end": "#FF3621"
+                      }
+                    }
+                  },
+                  "displayName": "Late deliveries",
+                  "format": {
+                    "type": "number-percent",
+                    "decimalPlaces": {
+                      "type": "max",
+                      "places": 1
+                    }
+                  }
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Late deliveries by district and hour",
+                "showDescription": true,
+                "description": "Darker = higher share of late orders"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 6,
+            "width": 8,
+            "height": 7
+          }
+        },
+        {
+          "widget": {
+            "name": "lt-by-district",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_orders",
                   "fields": [
                     {
                       "name": "delivery_district",
@@ -265,67 +1165,67 @@
               "widgetType": "bar",
               "encodings": {
                 "x": {
+                  "fieldName": "avg(late_flag)",
+                  "scale": {
+                    "type": "quantitative"
+                  },
+                  "displayName": "Late deliveries",
+                  "format": {
+                    "type": "number-percent",
+                    "decimalPlaces": {
+                      "type": "max",
+                      "places": 1
+                    }
+                  }
+                },
+                "y": {
                   "fieldName": "delivery_district",
                   "scale": {
                     "type": "categorical",
                     "sort": {
-                      "by": "y-reversed"
+                      "by": "x-reversed"
                     }
                   },
                   "displayName": "District"
                 },
-                "y": {
-                  "fieldName": "avg(late_flag)",
-                  "scale": {
-                    "type": "quantitative"
-                  },
-                  "displayName": "Late deliveries",
-                  "format": {
-                    "type": "number-percent",
-                    "decimalPlaces": {
-                      "type": "max",
-                      "places": 1
-                    }
-                  }
-                },
                 "label": {
                   "show": true
                 }
-              },
-              "frame": {
-                "showTitle": true,
-                "title": "Late deliveries per district"
               },
               "mark": {
                 "colors": [
                   "#FF3621"
                 ]
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Late share per district"
               }
             }
           },
           "position": {
-            "x": 0,
-            "y": 5,
-            "width": 3,
-            "height": 6
+            "x": 8,
+            "y": 6,
+            "width": 4,
+            "height": 7
           }
         },
         {
           "widget": {
-            "name": "late-by-hour",
+            "name": "lt-delay-buckets",
             "queries": [
               {
                 "name": "main_query",
                 "query": {
-                  "datasetName": "ds_deliveries",
+                  "datasetName": "ds_orders",
                   "fields": [
                     {
-                      "name": "order_hour",
-                      "expression": "`order_hour`"
+                      "name": "delay_bucket",
+                      "expression": "`delay_bucket`"
                     },
                     {
-                      "name": "avg(late_flag)",
-                      "expression": "AVG(`late_flag`)"
+                      "name": "count(order_id)",
+                      "expression": "COUNT(`order_id`)"
                     }
                   ],
                   "disaggregated": false
@@ -337,124 +1237,138 @@
               "widgetType": "bar",
               "encodings": {
                 "x": {
-                  "fieldName": "order_hour",
+                  "fieldName": "delay_bucket",
                   "scale": {
                     "type": "categorical",
                     "sort": {
-                      "by": "x"
+                      "by": "natural-order"
                     }
                   },
-                  "displayName": "Hour"
+                  "displayName": "Delivered vs promised time"
                 },
                 "y": {
-                  "fieldName": "avg(late_flag)",
+                  "fieldName": "count(order_id)",
                   "scale": {
                     "type": "quantitative"
                   },
-                  "displayName": "Late deliveries",
-                  "format": {
-                    "type": "number-percent",
-                    "decimalPlaces": {
-                      "type": "max",
-                      "places": 1
-                    }
-                  }
+                  "displayName": "Orders"
                 },
                 "label": {
                   "show": true
                 }
               },
-              "frame": {
-                "showTitle": true,
-                "title": "Late deliveries per hour of the day"
-              },
               "mark": {
                 "colors": [
-                  "#FF3621"
+                  "#1B3139"
                 ]
-              }
-            }
-          },
-          "position": {
-            "x": 3,
-            "y": 5,
-            "width": 3,
-            "height": 6
-          }
-        },
-        {
-          "widget": {
-            "name": "revenue-by-restaurant",
-            "queries": [
-              {
-                "name": "main_query",
-                "query": {
-                  "datasetName": "ds_deliveries",
-                  "fields": [
-                    {
-                      "name": "restaurant_name",
-                      "expression": "`restaurant_name`"
-                    },
-                    {
-                      "name": "sum(total_amount_rsd)",
-                      "expression": "SUM(`total_amount_rsd`)"
-                    }
-                  ],
-                  "disaggregated": false
-                }
-              }
-            ],
-            "spec": {
-              "version": 3,
-              "widgetType": "bar",
-              "encodings": {
-                "x": {
-                  "fieldName": "restaurant_name",
-                  "scale": {
-                    "type": "categorical",
-                    "sort": {
-                      "by": "y-reversed"
-                    }
-                  },
-                  "displayName": "Restaurant"
-                },
-                "y": {
-                  "fieldName": "sum(total_amount_rsd)",
-                  "scale": {
-                    "type": "quantitative"
-                  },
-                  "displayName": "Revenue (RSD)"
-                },
-                "label": {
-                  "show": true
-                }
               },
               "frame": {
                 "showTitle": true,
-                "title": "Which restaurants make money? Revenue per restaurant (RSD)"
-              },
-              "mark": {
-                "colors": [
-                  "#FF3621"
-                ]
+                "title": "How late? Delivered vs promised time"
               }
             }
           },
           "position": {
             "x": 0,
-            "y": 11,
+            "y": 13,
             "width": 6,
             "height": 6
           }
         },
         {
           "widget": {
-            "name": "late-reviews",
+            "name": "lt-rating-by-status",
             "queries": [
               {
                 "name": "main_query",
                 "query": {
-                  "datasetName": "ds_late_reviews",
+                  "datasetName": "ds_orders",
+                  "fields": [
+                    {
+                      "name": "delivery_status",
+                      "expression": "`delivery_status`"
+                    },
+                    {
+                      "name": "avg(rating)",
+                      "expression": "AVG(`rating`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "delivery_status",
+                  "scale": {
+                    "type": "categorical",
+                    "sort": {
+                      "by": "natural-order"
+                    }
+                  },
+                  "displayName": "Delivery"
+                },
+                "y": {
+                  "fieldName": "avg(rating)",
+                  "scale": {
+                    "type": "quantitative"
+                  },
+                  "displayName": "Avg rating",
+                  "format": {
+                    "type": "number-plain",
+                    "decimalPlaces": {
+                      "type": "max",
+                      "places": 1
+                    }
+                  }
+                },
+                "color": {
+                  "fieldName": "delivery_status",
+                  "scale": {
+                    "type": "categorical",
+                    "mappings": [
+                      {
+                        "value": "On time",
+                        "color": "#00A972"
+                      },
+                      {
+                        "value": "Late",
+                        "color": "#FF3621"
+                      }
+                    ]
+                  },
+                  "displayName": "Delivery"
+                },
+                "label": {
+                  "show": true
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Does lateness hurt ratings?",
+                "showDescription": true,
+                "description": "Average customer rating, on time vs late"
+              }
+            }
+          },
+          "position": {
+            "x": 6,
+            "y": 13,
+            "width": 6,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "lt-reviews",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_orders",
                   "fields": [
                     {
                       "name": "order_id",
@@ -483,6 +1397,10 @@
                     {
                       "name": "review_text",
                       "expression": "`review_text`"
+                    },
+                    {
+                      "name": "delivery_status",
+                      "expression": "`delivery_status`"
                     }
                   ],
                   "disaggregated": true
@@ -521,20 +1439,537 @@
                   {
                     "fieldName": "review_text",
                     "displayName": "Review"
+                  },
+                  {
+                    "fieldName": "delivery_status",
+                    "displayName": "Delivery"
                   }
                 ]
               },
               "frame": {
                 "showTitle": true,
-                "title": "Late orders: what customers say"
+                "title": "What customers say",
+                "showDescription": true,
+                "description": "Filter Delivery = Late to read the complaints"
               }
             }
           },
           "position": {
             "x": 0,
-            "y": 17,
+            "y": 19,
+            "width": 12,
+            "height": 8
+          }
+        }
+      ]
+    },
+    {
+      "name": "restaurants",
+      "displayName": "Restaurants",
+      "pageType": "PAGE_TYPE_CANVAS",
+      "layoutVersion": "GRID_V1",
+      "layout": [
+        {
+          "widget": {
+            "name": "rs-header",
+            "multilineTextboxSpec": {
+              "lines": [
+                "# Which restaurants make money?\n",
+                "\n",
+                "Revenue, order value and service quality per restaurant and cuisine."
+              ]
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 0,
+            "width": 12,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "rs-date",
+            "queries": [
+              {
+                "name": "f_rs-date_ds_orders",
+                "query": {
+                  "datasetName": "ds_orders",
+                  "fields": [
+                    {
+                      "name": "order_date",
+                      "expression": "`order_date`"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "filter-date-range-picker",
+              "encodings": {
+                "fields": [
+                  {
+                    "fieldName": "order_date",
+                    "displayName": "Order date",
+                    "queryName": "f_rs-date_ds_orders"
+                  }
+                ]
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Order date"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 2,
             "width": 6,
-            "height": 7
+            "height": 1
+          }
+        },
+        {
+          "widget": {
+            "name": "rs-cuisine",
+            "queries": [
+              {
+                "name": "f_rs-cuisine_ds_orders",
+                "query": {
+                  "datasetName": "ds_orders",
+                  "fields": [
+                    {
+                      "name": "cuisine",
+                      "expression": "`cuisine`"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              },
+              {
+                "name": "f_rs-cuisine_ds_restaurant_scorecard",
+                "query": {
+                  "datasetName": "ds_restaurant_scorecard",
+                  "fields": [
+                    {
+                      "name": "cuisine",
+                      "expression": "`cuisine`"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "filter-multi-select",
+              "encodings": {
+                "fields": [
+                  {
+                    "fieldName": "cuisine",
+                    "displayName": "Cuisine",
+                    "queryName": "f_rs-cuisine_ds_orders"
+                  },
+                  {
+                    "fieldName": "cuisine",
+                    "displayName": "Cuisine",
+                    "queryName": "f_rs-cuisine_ds_restaurant_scorecard"
+                  }
+                ]
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Cuisine"
+              }
+            }
+          },
+          "position": {
+            "x": 6,
+            "y": 2,
+            "width": 6,
+            "height": 1
+          }
+        },
+        {
+          "widget": {
+            "name": "rs-revenue",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_orders",
+                  "fields": [
+                    {
+                      "name": "sum(total_amount_rsd)",
+                      "expression": "SUM(`total_amount_rsd`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "sum(total_amount_rsd)",
+                  "displayName": "Revenue (RSD)",
+                  "format": {
+                    "type": "number-plain",
+                    "decimalPlaces": {
+                      "type": "max",
+                      "places": 1
+                    },
+                    "abbreviation": "compact"
+                  }
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Revenue (RSD)"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 3,
+            "width": 4,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "rs-restaurants",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_orders",
+                  "fields": [
+                    {
+                      "name": "countdistinct(restaurant_name)",
+                      "expression": "COUNT(DISTINCT `restaurant_name`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "countdistinct(restaurant_name)",
+                  "displayName": "Active restaurants",
+                  "format": {
+                    "type": "number-plain",
+                    "decimalPlaces": {
+                      "type": "max",
+                      "places": 0
+                    },
+                    "abbreviation": "compact"
+                  }
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Active restaurants"
+              }
+            }
+          },
+          "position": {
+            "x": 4,
+            "y": 3,
+            "width": 4,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "rs-items",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_orders",
+                  "fields": [
+                    {
+                      "name": "avg(item_count)",
+                      "expression": "AVG(`item_count`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "avg(item_count)",
+                  "displayName": "Avg items per order",
+                  "format": {
+                    "type": "number-plain",
+                    "decimalPlaces": {
+                      "type": "max",
+                      "places": 1
+                    }
+                  }
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Avg items per order"
+              }
+            }
+          },
+          "position": {
+            "x": 8,
+            "y": 3,
+            "width": 4,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "rs-top",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_orders",
+                  "fields": [
+                    {
+                      "name": "restaurant_name",
+                      "expression": "`restaurant_name`"
+                    },
+                    {
+                      "name": "cuisine",
+                      "expression": "`cuisine`"
+                    },
+                    {
+                      "name": "sum(total_amount_rsd)",
+                      "expression": "SUM(`total_amount_rsd`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "sum(total_amount_rsd)",
+                  "scale": {
+                    "type": "quantitative"
+                  },
+                  "displayName": "Revenue (RSD)",
+                  "format": {
+                    "type": "number-plain",
+                    "decimalPlaces": {
+                      "type": "max",
+                      "places": 1
+                    },
+                    "abbreviation": "compact"
+                  }
+                },
+                "y": {
+                  "fieldName": "restaurant_name",
+                  "scale": {
+                    "type": "categorical",
+                    "sort": {
+                      "by": "x-reversed"
+                    }
+                  },
+                  "displayName": "Restaurant"
+                },
+                "color": {
+                  "fieldName": "cuisine",
+                  "scale": {
+                    "type": "categorical"
+                  },
+                  "displayName": "Cuisine"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Revenue per restaurant (RSD)"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 6,
+            "width": 8,
+            "height": 9
+          }
+        },
+        {
+          "widget": {
+            "name": "rs-cuisine-share",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_orders",
+                  "fields": [
+                    {
+                      "name": "cuisine",
+                      "expression": "`cuisine`"
+                    },
+                    {
+                      "name": "sum(total_amount_rsd)",
+                      "expression": "SUM(`total_amount_rsd`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "sum(total_amount_rsd)",
+                  "scale": {
+                    "type": "quantitative"
+                  },
+                  "displayName": "Revenue (RSD)",
+                  "format": {
+                    "type": "number-plain",
+                    "decimalPlaces": {
+                      "type": "max",
+                      "places": 1
+                    },
+                    "abbreviation": "compact"
+                  }
+                },
+                "y": {
+                  "fieldName": "cuisine",
+                  "scale": {
+                    "type": "categorical",
+                    "sort": {
+                      "by": "x-reversed"
+                    }
+                  },
+                  "displayName": "Cuisine"
+                }
+              },
+              "mark": {
+                "colors": [
+                  "#1B3139"
+                ]
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Revenue per cuisine (RSD)"
+              }
+            }
+          },
+          "position": {
+            "x": 8,
+            "y": 6,
+            "width": 4,
+            "height": 9
+          }
+        },
+        {
+          "widget": {
+            "name": "rs-scorecard",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_restaurant_scorecard",
+                  "fields": [
+                    {
+                      "name": "restaurant_name",
+                      "expression": "`restaurant_name`"
+                    },
+                    {
+                      "name": "cuisine",
+                      "expression": "`cuisine`"
+                    },
+                    {
+                      "name": "orders",
+                      "expression": "`orders`"
+                    },
+                    {
+                      "name": "revenue_rsd",
+                      "expression": "`revenue_rsd`"
+                    },
+                    {
+                      "name": "avg_order_rsd",
+                      "expression": "`avg_order_rsd`"
+                    },
+                    {
+                      "name": "late_pct",
+                      "expression": "`late_pct`"
+                    },
+                    {
+                      "name": "avg_rating",
+                      "expression": "`avg_rating`"
+                    }
+                  ],
+                  "disaggregated": true
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  {
+                    "fieldName": "restaurant_name",
+                    "displayName": "Restaurant"
+                  },
+                  {
+                    "fieldName": "cuisine",
+                    "displayName": "Cuisine"
+                  },
+                  {
+                    "fieldName": "orders",
+                    "displayName": "Orders"
+                  },
+                  {
+                    "fieldName": "revenue_rsd",
+                    "displayName": "Revenue (RSD)"
+                  },
+                  {
+                    "fieldName": "avg_order_rsd",
+                    "displayName": "Avg order (RSD)"
+                  },
+                  {
+                    "fieldName": "late_pct",
+                    "displayName": "Late %"
+                  },
+                  {
+                    "fieldName": "avg_rating",
+                    "displayName": "Avg rating"
+                  }
+                ]
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Restaurant scorecard (all days)",
+                "showDescription": true,
+                "description": "Click a column header to sort"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 15,
+            "width": 12,
+            "height": 8
           }
         }
       ]
@@ -543,26 +1978,215 @@
       "name": "live",
       "displayName": "Live",
       "pageType": "PAGE_TYPE_CANVAS",
+      "layoutVersion": "GRID_V1",
       "layout": [
         {
           "widget": {
-            "name": "live-title",
+            "name": "lv-header",
             "multilineTextboxSpec": {
               "lines": [
-                "## Live: delivery time in 5-minute windows (streaming pipeline, last 3 hours)"
+                "# Live deliveries\n",
+                "\n",
+                "Streaming pipeline output in 5-minute windows, last 3 hours of data. Refresh to see new windows arrive."
               ]
             }
           },
           "position": {
             "x": 0,
             "y": 0,
-            "width": 6,
+            "width": 12,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "lv-district",
+            "queries": [
+              {
+                "name": "f_lv-district_ds_live",
+                "query": {
+                  "datasetName": "ds_live",
+                  "fields": [
+                    {
+                      "name": "delivery_district",
+                      "expression": "`delivery_district`"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "filter-multi-select",
+              "encodings": {
+                "fields": [
+                  {
+                    "fieldName": "delivery_district",
+                    "displayName": "District",
+                    "queryName": "f_lv-district_ds_live"
+                  }
+                ]
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "District"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 2,
+            "width": 12,
             "height": 1
           }
         },
         {
           "widget": {
-            "name": "live-avg-minutes",
+            "name": "lv-deliveries",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_live",
+                  "fields": [
+                    {
+                      "name": "sum(deliveries)",
+                      "expression": "SUM(`deliveries`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "sum(deliveries)",
+                  "displayName": "Deliveries (3 h)",
+                  "format": {
+                    "type": "number-plain",
+                    "decimalPlaces": {
+                      "type": "max",
+                      "places": 0
+                    },
+                    "abbreviation": "compact"
+                  }
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Deliveries (3 h)"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 3,
+            "width": 4,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "lv-late",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_live",
+                  "fields": [
+                    {
+                      "name": "sum(late_deliveries)",
+                      "expression": "SUM(`late_deliveries`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "sum(late_deliveries)",
+                  "displayName": "Late deliveries (3 h)",
+                  "format": {
+                    "type": "number-plain",
+                    "decimalPlaces": {
+                      "type": "max",
+                      "places": 0
+                    },
+                    "abbreviation": "compact"
+                  }
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Late deliveries (3 h)"
+              }
+            }
+          },
+          "position": {
+            "x": 4,
+            "y": 3,
+            "width": 4,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "lv-avg",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_live",
+                  "fields": [
+                    {
+                      "name": "avg(avg_delivery_minutes)",
+                      "expression": "AVG(`avg_delivery_minutes`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "avg(avg_delivery_minutes)",
+                  "displayName": "Avg delivery time (min)",
+                  "format": {
+                    "type": "number-plain",
+                    "decimalPlaces": {
+                      "type": "max",
+                      "places": 1
+                    }
+                  }
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Avg delivery time (min)"
+              }
+            }
+          },
+          "position": {
+            "x": 8,
+            "y": 3,
+            "width": 4,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "lv-avg-minutes",
             "queries": [
               {
                 "name": "main_query",
@@ -598,8 +2222,20 @@
                   "scale": {
                     "type": "quantitative"
                   },
-                  "displayName": "Avg delivery minutes"
+                  "displayName": "Avg delivery minutes",
+                  "format": {
+                    "type": "number-plain",
+                    "decimalPlaces": {
+                      "type": "max",
+                      "places": 1
+                    }
+                  }
                 }
+              },
+              "mark": {
+                "colors": [
+                  "#1B3139"
+                ]
               },
               "frame": {
                 "showTitle": true,
@@ -609,14 +2245,14 @@
           },
           "position": {
             "x": 0,
-            "y": 1,
-            "width": 3,
+            "y": 6,
+            "width": 8,
             "height": 6
           }
         },
         {
           "widget": {
-            "name": "live-late-by-district",
+            "name": "lv-late-by-district",
             "queries": [
               {
                 "name": "main_query",
@@ -641,41 +2277,106 @@
               "widgetType": "bar",
               "encodings": {
                 "x": {
-                  "fieldName": "delivery_district",
-                  "scale": {
-                    "type": "categorical",
-                    "sort": {
-                      "by": "y-reversed"
-                    }
-                  },
-                  "displayName": "District"
-                },
-                "y": {
                   "fieldName": "sum(late_deliveries)",
                   "scale": {
                     "type": "quantitative"
                   },
                   "displayName": "Late deliveries"
                 },
+                "y": {
+                  "fieldName": "delivery_district",
+                  "scale": {
+                    "type": "categorical",
+                    "sort": {
+                      "by": "x-reversed"
+                    }
+                  },
+                  "displayName": "District"
+                },
                 "label": {
                   "show": true
                 }
-              },
-              "frame": {
-                "showTitle": true,
-                "title": "Late deliveries per district (last 3 hours)"
               },
               "mark": {
                 "colors": [
                   "#FF3621"
                 ]
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Late deliveries per district"
               }
             }
           },
           "position": {
-            "x": 3,
-            "y": 1,
-            "width": 3,
+            "x": 8,
+            "y": 6,
+            "width": 4,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "lv-deliveries-per-window",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "ds_live",
+                  "fields": [
+                    {
+                      "name": "window_start",
+                      "expression": "`window_start`"
+                    },
+                    {
+                      "name": "delivery_district",
+                      "expression": "`delivery_district`"
+                    },
+                    {
+                      "name": "sum(deliveries)",
+                      "expression": "SUM(`deliveries`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "window_start",
+                  "scale": {
+                    "type": "temporal"
+                  },
+                  "displayName": "Window"
+                },
+                "y": {
+                  "fieldName": "sum(deliveries)",
+                  "scale": {
+                    "type": "quantitative"
+                  },
+                  "displayName": "Deliveries"
+                },
+                "color": {
+                  "fieldName": "delivery_district",
+                  "scale": {
+                    "type": "categorical"
+                  },
+                  "displayName": "District"
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Deliveries per 5 minutes, by district"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 12,
+            "width": 12,
             "height": 6
           }
         }
@@ -684,7 +2385,39 @@
   ],
   "uiSettings": {
     "theme": {
-      "widgetHeaderAlignment": "ALIGNMENT_UNSPECIFIED"
+      "canvasBackgroundColor": {
+        "light": "#F4F6F7",
+        "dark": "#0B1418"
+      },
+      "widgetBackgroundColor": {
+        "light": "#FFFFFF",
+        "dark": "#14232A"
+      },
+      "widgetBorderColor": {
+        "light": "#FFFFFF",
+        "dark": "#14232A"
+      },
+      "fontColor": {
+        "light": "#1B3139",
+        "dark": "#EEEDE9"
+      },
+      "selectionColor": {
+        "light": "#2272B4",
+        "dark": "#8ACAFF"
+      },
+      "visualizationColors": [
+        "#1B3139",
+        "#2272B4",
+        "#8BCAE7",
+        "#FFAB00",
+        "#FF7E5C",
+        "#98102A",
+        "#5B6F75",
+        "#C7D3D6"
+      ],
+      "widgetHeaderAlignment": "LEFT",
+      "fontFamily": "Inter",
+      "widgetCornerRadius": 12
     }
   }
 }
