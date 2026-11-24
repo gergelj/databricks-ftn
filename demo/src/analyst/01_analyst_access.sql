@@ -1,9 +1,9 @@
 -- =============================================================================
--- Block 8: give the analysts access to gold, and only to gold.
+-- Give the analysts access to gold, and only to gold.
 -- Run as a workspace/catalog admin in the SQL editor.
 --
--- Prerequisite: an account group `databricks-ftn-analysts` with the demo analyst user in it,
--- assigned to the workspace. (Not created by Terraform yet.)
+-- Prerequisite: the account group `databricks-ftn-analysts` with at least one analyst user, assigned to the
+-- workspace (Terraform creates it from `analyst_users`, see ../../../infra-terraform/analysts.tf).
 -- Replace the catalog name if you deployed to another target.
 -- =============================================================================
 

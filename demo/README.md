@@ -1,13 +1,14 @@
 # Food delivery demo (Declarative Automation Bundle)
 
-The demo for the Databricks x FTN guest lecture. We are the data team of a (fictional) food delivery
+An end-to-end Databricks project, first shown at a Databricks guest lecture at FTN Novi Sad. Fork it and
+reuse it. You are the data team of a (fictional) food delivery
 startup in Novi Sad. Orders and courier GPS events arrive all the time, restaurants send their menus every night,
 and customers change their addresses. Management asks two questions:
 
 1. **Why are deliveries late?**
 2. **Which restaurants make money?**
 
-We follow one order, **#1042** (Milica, Liman, delivered 21 minutes late, "Food arrived cold"), from a raw JSON
+Follow one order, **#1042** (Milica, Liman, delivered 21 minutes late, "Food arrived cold"), from a raw JSON
 file through bronze, silver and gold, to the dashboard and a Genie answer.
 
 Terraform in [`../infra-terraform`](../infra-terraform) builds the platform (workspace, network, Unity Catalog).
@@ -49,10 +50,10 @@ demo/
     restaurant_refresh.job.yml                batch pipeline when a restaurants file arrives (file-arrival trigger)
     data_generator.job.yml                    the data generator
     demo_setup.job.yml                        one-time setup
-    demo_reset.job.yml                        reset between dry runs
+    demo_reset.job.yml                        reset everything to a clean state
     stop_streaming.job.yml                    stop the continuous pipeline
-    food_delivery.dashboard.yml               AI/BI dashboard (wow tour, block 8)
-    food_delivery.genie.yml                   Genie space on the gold tables (block 8)
+    food_delivery.dashboard.yml               AI/BI dashboard
+    food_delivery.genie.yml                   Genie space on the gold tables
   src/
     generator/generate_events.py              writes orders, GPS, customer CDC and restaurant files (+ planned failures)
     pipelines/streaming/bronze.py             Python: Auto Loader for orders, GPS, customer changes
@@ -65,9 +66,9 @@ demo/
     setup/start_streaming_pipeline.py         start the streaming pipeline and wait for data (setup/reset jobs)
     setup/stop_streaming_pipeline.py          stop it (reset and stop jobs)
     setup/99_reset.py                         delete generated data (reset job)
-    notebooks/01_batch_ingestion.py           block 5: CSV schema inference, Auto Loader + checkpoints, time travel
-    notebooks/02_streaming_live.py            block 6: live-updating stream in a notebook
-    analyst/01_analyst_access.sql             block 8: grants for the analysts group, masked columns
+    notebooks/01_batch_ingestion.py           CSV schema inference, Auto Loader + checkpoints, time travel
+    notebooks/02_streaming_live.py            live-updating stream in a notebook
+    analyst/01_analyst_access.sql             grants for the analysts group, masked columns
     dashboards/food_delivery.lvdash.json      the dashboard definition (datasets, widgets, layout)
   data/restaurants.csv                        20 fictional Novi Sad restaurants
 ```
@@ -79,10 +80,15 @@ and three restaurants (R001, R012, R014) have slow kitchens. Late orders mostly 
 
 ## First-time setup
 
-Authentication: run the commands from the `demo/` folder. The workspace host comes from `databricks.yml`,
-and the CLI uses your Azure CLI login (`az login`, the same one Terraform uses). Alternatively create a profile with
-`databricks auth login --host https://adb-7405608329558361.1.azuredatabricks.net --profile databricks-ftn`
-and add `--profile databricks-ftn` to the commands.
+Authentication: run the commands from the `demo/` folder. First replace the two `host` values in
+`databricks.yml` with your workspace URL (`terraform output workspace_url` in `../infra-terraform`). The CLI can
+use your Azure CLI login (`az login`, the same one Terraform uses, with `export DATABRICKS_AUTH_TYPE=azure-cli`),
+or create a profile with `databricks auth login --host <workspace-url> --profile my-workspace` and add
+`--profile my-workspace` to the commands.
+
+The bundle expects the catalog `databricks_ftn_catalog` and the groups `databricks-ftn-admins` and
+`databricks-ftn-analysts` (all created by `../infra-terraform` with `resource_prefix = "databricks-ftn"`).
+Using other names? Override them, e.g. `--var catalog=my_catalog`, or change the defaults in `databricks.yml`.
 
 ```bash
 cd demo
@@ -96,23 +102,26 @@ databricks bundle run food_delivery_setup -t dev   # schemas, history, starts st
 ```
 
 **Cost:** the streaming pipeline is continuous: once started it runs until you stop it
-(`databricks bundle run stop_streaming -t dev`). Stop it after every dry run and after the session.
+(`databricks bundle run stop_streaming -t dev`). Stop it whenever you are done.
 
-Pre-run before the session so all layers have data. Start the generator 5-10 minutes before the wow tour.
+Start the data generator a few minutes before you want to look at live data, so new files keep arriving.
 After a fresh deploy, wait a couple of minutes before the first file drop: the file-arrival trigger's first check
 only records which files already exist.
 
-## Run book (blocks from the agenda)
+## Walkthrough: what to try
 
-| Block | What to do |
+A suggested order, from platform to answers:
+
+| Step | What to do |
 |---|---|
-| 0. Wow tour | Pipeline graphs (Jobs & Pipelines → `[dev ...] food_delivery_streaming` running, `food_delivery_batch`), dashboard, Genie: "Why are deliveries late in Liman?" |
-| 4. Walkthrough | Catalog Explorer: `databricks_ftn_catalog` → `landing.raw` volume, `silver.orders` (history, lineage) |
-| 5. Batch | Notebook `01_batch_ingestion`. Then the batch pipeline (`src/pipelines/batch/`, graph, `databricks bundle run food_delivery_batch -t dev`). **Prediction question:** run the generator with `mode=bad_records` and ask what happens; the running streaming pipeline handles it within seconds: data quality tab of `silver.orders`, `silver.orders_quarantine`. Orchestration: run the generator with `mode=nightly_restaurants`; `food_delivery_on_new_restaurant_file` starts by itself after about 2 minutes (the trigger checks every minute and waits 60 s after the last change; use the wait to show the trigger settings) and the new restaurant (Poke Bowl Liman) appears in `silver.restaurants`. Show the daily schedule on `food_delivery_daily_batch`. |
-| Break | `databricks bundle run data_generator -t dev --params duration_minutes=40` (runs in the background) |
-| 6. Streaming | Notebook `02_streaming_live` on the classic cluster (live counter). Then the streaming pipeline (`src/pipelines/streaming/`): it has been running all along, the counts in its graph keep growing. Key message: same code as the batch pipeline (Auto Loader, Python + SQL), different trigger: `continuous: true`. Planned failures: `mode=late_event` (watermark), `mode=schema_change` (`tip_amount` appears in `bronze.orders`). |
-| 7. DABs | `databricks.yml`, `resources/`, `bundle validate`, `bundle deploy`. Live change idea: add `o.tip_amount` to `silver.orders`, deploy, refresh. |
-| 8. Analyst view | `src/analyst/01_analyst_access.sql` (grants, masking), lineage of `gold.late_deliveries_per_district`, Genie, then the saved queries in `/Shared/databricks-ftn-analyst-queries` ("Why late 1-3", `ai_classify` on review texts, district dropdown). They are Terraform `databricks_query` resources in `../infra-terraform/analyst_queries.tf`, so analysts can run them. |
+| 1. Look around | Jobs & Pipelines: `[dev ...] food_delivery_streaming` (running) and `food_delivery_batch`, their graphs, the dashboard and the Genie space. |
+| 2. Unity Catalog | Catalog Explorer: `databricks_ftn_catalog` → the `landing.raw` volume, `silver.orders` (history, lineage). |
+| 3. Batch | Notebook `01_batch_ingestion`. Then the batch pipeline (`src/pipelines/batch/`, graph, `databricks bundle run food_delivery_batch -t dev`). |
+| 4. Data quality | Run the generator with `mode=bad_records`. Before you look, guess what the pipeline will do. The running streaming pipeline handles the rows within seconds: see the data quality tab of `silver.orders` and `silver.orders_quarantine`. |
+| 5. Orchestration | Run the generator with `mode=nightly_restaurants`. `food_delivery_on_new_restaurant_file` starts by itself after about 2 minutes (the trigger checks every minute and waits 60 s after the last change); the new restaurant (Poke Bowl Liman) appears in `silver.restaurants`. The schedule is on `food_delivery_daily_batch`. |
+| 6. Streaming | Start the generator (`databricks bundle run data_generator -t dev --params duration_minutes=40`). Notebook `02_streaming_live` on a classic cluster (live counter). Then the streaming pipeline (`src/pipelines/streaming/`): the counts in its graph keep growing. Same code style as the batch pipeline (Auto Loader, Python + SQL), different trigger: `continuous: true`. Planned failures: `mode=late_event` (watermark), `mode=schema_change` (`tip_amount` appears in `bronze.orders`). |
+| 7. Bundles | `databricks.yml`, `resources/`, `bundle validate`, `bundle deploy`. Try a change: add `o.tip_amount` to `silver.orders`, deploy, refresh. |
+| 8. Analyst view | `src/analyst/01_analyst_access.sql` (grants, masking), lineage of `gold.late_deliveries_per_district`, the dashboard, Genie, then the saved queries in `/Shared/databricks-ftn-analyst-queries` (`ai_classify` on review texts, district dropdown). They are Terraform `databricks_query` resources in `../infra-terraform/analyst_queries.tf`. |
 
 Generator modes (job parameter `mode`, or the notebook widget):
 
@@ -152,7 +161,7 @@ Things to know:
 - Timestamps are Novi Sad local time, stored without a time zone.
 - The schema change makes the streaming pipeline restart once with the new schema, which is expected.
 
-## Reset between dry runs
+## Reset to a clean state
 
 ```bash
 databricks bundle run food_delivery_reset -t dev --params confirm=yes
@@ -191,5 +200,4 @@ and every list of items with an `id` sorted by `id`. Keep that order when you ed
 
 ## Not in the bundle (yet)
 
-- **Analysts group** `databricks-ftn-analysts` and a demo analyst user: create in the account console or add to Terraform.
-- **GitHub Actions** deployment on merge to main (optional in block 7).
+- **CI/CD**: a GitHub Actions workflow that deploys the bundle on merge to `main` would be a good next step.

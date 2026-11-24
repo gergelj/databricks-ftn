@@ -1,6 +1,6 @@
 # Databricks notebook source
 # MAGIC %md
-# MAGIC # 01 Batch ingestion, Auto Loader and Delta time travel (block 5)
+# MAGIC # 01 Batch ingestion, Auto Loader and Delta time travel
 # MAGIC
 # MAGIC 1. Look at the landing zone (a Unity Catalog volume)
 # MAGIC 2. Read the nightly `restaurants.csv` with schema inference

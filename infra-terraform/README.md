@@ -1,15 +1,8 @@
 # Azure VNet injection with User-Defined Catalog Workspace Setup Guide (with VNet deployment)
 
-> [!NOTE]
-> **This is the recommended, canonical Azure VNet injection template.** It supersedes the
-> legacy [`azure-vnet-injection`](../azure-vnet-injection/) example, which is now deprecated.
-
 This Terraform example deploys an Azure Databricks workspace with VNet Injection, Unity Catalog, and a user-defined catalog with an external location. It provisions the full networking stack (VNet, subnets, NSG, NAT Gateway), a Databricks workspace with Secure Cluster Connectivity (No Public IP), configures Unity Catalog with a storage credential, external location, and user-defined catalog backed by an Azure Storage Account, and creates a single-node Databricks cluster on the latest LTS runtime in standard (shared) access mode.
 
-By default this deployment creates a new resource group and a new virtual network from scratch. It can also reuse an existing resource group (`create_resource_group = false`) and an existing VNet (`create_new_vnet = false`, with `vnet_name`, and `vnet_resource_group_name` if the VNet is not in the workspace resource group). When reusing a VNet the module looks it up and creates the delegated subnets, NSG, and NAT Gateway within it. The same options exist in `azure-privatelink-classic`.
-
-### Important 
-The difference between this deployment option and the standard option for azure-vnet-injection is the inclusion of a user-defined catalog and external location. The requirements and authentication procedures remain the same.
+By default this deployment creates a new resource group and a new virtual network from scratch. It can also reuse an existing resource group (`create_resource_group = false`) and an existing VNet (`create_new_vnet = false`, with `vnet_name`, and `vnet_resource_group_name` if the VNet is not in the workspace resource group). When reusing a VNet the module looks it up and creates the delegated subnets, NSG, and NAT Gateway within it.
 
 ## Requirements
 
@@ -23,7 +16,7 @@ The difference between this deployment option and the standard option for azure-
 
 ## Before you begin
 
-Configuration values (subscription ID, VNet and subnet CIDRs, location, resource group behavior, and network options) are defined as variables. Copy `tf/terraform.tfvars.example` to `tf/terraform.tfvars` and set your values there. Terraform loads `terraform.tfvars` automatically. You can also use a file ending in `.auto.tfvars` or pass variables via the command line.
+Configuration values (subscription ID, VNet and subnet CIDRs, location, resource group behavior, and network options) are defined as variables. Copy `terraform.tfvars.example` to `terraform.tfvars` and set your values there. Terraform loads `terraform.tfvars` automatically. You can also use a file ending in `.auto.tfvars` or pass variables via the command line.
 
 ## Authenticate the Azure CLI
 
@@ -124,7 +117,7 @@ The code provisions:
 
 ### Variables
 
-Copy `terraform.tfvars.example` to `terraform.tfvars` in the `tf/` directory and set your values. Do not commit `terraform.tfvars` (it may contain sensitive data). Terraform automatically loads `terraform.tfvars`; for other file names use `-var-file`.
+Copy `terraform.tfvars.example` to `terraform.tfvars` in this folder and set your values. Do not commit `terraform.tfvars` (it may contain sensitive data). Terraform automatically loads `terraform.tfvars`; for other file names use `-var-file`.
 
 #### List of variables
 
@@ -134,15 +127,15 @@ Copy `terraform.tfvars.example` to `terraform.tfvars` in the `tf/` directory and
 | `create_resource_group` | **(Optional)** `true` (default) creates the workspace resource group; `false` reuses the existing group named `resource_group_name`, and its region is used. |
 | `resource_group_name` | **(Required)** Name of the workspace resource group (workspace, access connector, catalog storage). Created when `create_resource_group` is `true`, otherwise it must already exist. |
 | `resource_prefix` | **(Optional)** Prefix for Azure resource names, following the Azure CAF pattern `<abbreviation>-<resource_prefix>[-suffix]` (`vnet-…`, `nsg-…`, `snet-…-public`, `ng-…-nat`, `pip-…-nat`, `dbac-…-uc`) and the defaults of the names below. Must be 1–40 characters: a-z, 0-9, `-`, `.`. Default: `databricks-workspace`. |
-| `managed_resource_group_name` | **(Optional)** Name of the Databricks managed resource group; must differ from `resource_group_name`. Default `""` uses `mrg-dbw-<resource_prefix>`. Changing it forces workspace replacement. Same variable as in `azure-privatelink-classic`. |
+| `managed_resource_group_name` | **(Optional)** Name of the Databricks managed resource group; must differ from `resource_group_name`. Default `""` uses `mrg-dbw-<resource_prefix>`. Changing it forces workspace replacement. |
 | `tags` | **(Optional)** Map of tags to assign to all resources. Default: `{}`. |
 | `databricks_account_id` | **(Required)** Databricks account ID. Find it in the account console URL. |
-| `workspace_name` | **(Optional)** Name of the Databricks workspace (3–30 characters: letters, numbers, `-`, `_`). Default `""` uses `dbw-<resource_prefix>`. Same variable as in `azure-privatelink-classic`. |
+| `workspace_name` | **(Optional)** Name of the Databricks workspace (3–30 characters: letters, numbers, `-`, `_`). Default `""` uses `dbw-<resource_prefix>`. |
 | `admin_users` | **(Optional)** List of Databricks account users (emails) added to the admin group. The group is made workspace admin, owner (metastore admin) of a metastore created via `new_metastore_name`, and granted `ALL PRIVILEGES` on the catalog, external location and storage credential. Required with `new_metastore_name`; run Terraform as one of these users in that case. Default `[]`. |
 | `admin_group_name` | **(Optional)** Display name of the account-level admin group. Default `""` uses `<new_metastore_name>-admins` when creating a metastore, otherwise `<resource_prefix>-admins`. |
 | `sql_warehouse_name` | **(Optional)** Name of an existing SQL warehouse that runs the saved analyst queries. Default `"Serverless Starter Warehouse"`. |
 | `analyst_users` | **(Optional)** List of Databricks account users (emails) added to the analyst group `<resource_prefix>-analysts`, which is assigned to the workspace as users. Default `[]` (empty group). |
-| `root_storage_name` | **(Optional)** Root DBFS storage account name: lowercase letters and numbers, 3–24 characters, globally unique. Default `""` derives `dbfs` + up to 20 alphanumeric characters of `resource_prefix`. Same variable as in `azure-privatelink-classic`. |
+| `root_storage_name` | **(Optional)** Root DBFS storage account name: lowercase letters and numbers, 3–24 characters, globally unique. Default `""` derives `dbfs` + up to 20 alphanumeric characters of `resource_prefix`. |
 | `new_catalog` | **(Optional)** Create the user-defined catalog stack (access connector, storage account, container, storage credential, external location, catalog). Requires a metastore (`metastore_id` or `new_metastore_name`). Default `true`. |
 | `uc_storage_account_name` | **(Optional)** Catalog storage account name (3-24 chars, lowercase letters and numbers, globally unique). Default `""` derives `uc` + up to 22 alphanumeric characters of `resource_prefix`, which can collide — set it explicitly if so. |
 | `uc_container_name` | **(Optional)** Container used as catalog storage root. Default `uc-catalog`. |
@@ -159,7 +152,7 @@ Copy `terraform.tfvars.example` to `terraform.tfvars` in the `tf/` directory and
 | `vnet_cidr` | **(Conditional)** CIDR for the VNet address space (e.g. `10.0.0.0/20`). Required when `create_new_vnet = true`; ignored when reusing an existing VNet. |
 | `subnet_public_cidr` | **(Required)** CIDR for the public (host) subnet. Must be within the VNet. |
 | `subnet_private_cidr` | **(Required)** CIDR for the private (container) subnet. Must be within the VNet. |
-| `create_nat_gateway` | **(Optional)** Create the NAT gateway for outbound access. Default `true`. `false` is rejected by this template: without Private Link, clusters reach the Databricks control plane only through NAT and would not launch. To deploy without NAT use `azure-privatelink-classic`. |
+| `create_nat_gateway` | **(Optional)** Create the NAT gateway for outbound access. Default `true`. `false` is rejected by this template: without Private Link, clusters reach the Databricks control plane only through NAT and would not launch. Deploying without NAT needs Private Link, which this template does not set up. |
 | `nat_gateway_zones` | **(Optional)** Availability zone(s) for the NAT gateway and its public IP. Azure NAT gateway is a zonal resource, so provide at most one zone. Default: `["1"]`. Use `[]` for regions without availability-zone support. For zone-redundant egress, deploy one NAT gateway per zone (not covered by this example). |
 
 ### Unity Catalog storage security
@@ -209,7 +202,7 @@ Navigate to the workspace URL and log in with your Databricks credentials. The p
 
 To verify the deployment succeeded:
 
-1. **Terraform outputs** – From the `tf/` directory, run `terraform output` and confirm `workspace_url`, `workspace_id`, and `vnet_id` are present and non-empty. `cluster_id` is populated only when `create_cluster = true` (otherwise it is `null`).
+1. **Terraform outputs** – From this folder, run `terraform output` and confirm `workspace_url`, `workspace_id`, and `vnet_id` are present and non-empty. `cluster_id` is populated only when `create_cluster = true` (otherwise it is `null`).
 2. **Azure portal** – In your subscription, check that the resource group, VNet, subnets, NAT gateway, and the Databricks workspace exist and are in "Succeeded" or "Ready" state.
 3. **Workspace access** – Open `terraform output -raw workspace_url` in a browser and sign in (public access is always enabled).
 4. **Single-node cluster** (only when `create_cluster = true`) – Under **Compute**, locate the cluster named `<resource_prefix>-uc-cluster`. Confirm the access mode is **Standard** (shared), runtime is the latest LTS, node type matches `var.node_type_id`, auto-termination matches `var.cluster_autotermination_minutes` (default `10`), and the cluster carries the `ClusterType = TerraformDeploymentTesting` tag. Start the cluster and wait for "Running".
@@ -234,7 +227,7 @@ Type `yes` when prompted. Destruction can take several minutes.
 | `terraform plan` fails on subscription or permission | Wrong subscription or insufficient rights | Run `az account set --subscription "<id>"` and ensure the identity has Contributor at subscription scope. |
 | Subnet or delegation errors | CIDR too small or delegation conflict | Ensure `vnet_cidr` encompasses both subnets. Set `subnet_public_cidr` and `subnet_private_cidr` to non-overlapping CIDRs within the VNet (e.g. /24 each within a /20 VNet). |
 | `Resource group already exists` on `create_resource_group` | The group named `resource_group_name` already exists | Set `create_resource_group = false` to reuse it, or choose another name. |
-| `create_nat_gateway = false is not supported by this template` | NAT disabled without Private Link | Set `create_nat_gateway = true`, or use the `azure-privatelink-classic` template for deployments without NAT. |
+| `create_nat_gateway = false is not supported by this template` | NAT disabled without Private Link | Set `create_nat_gateway = true`, (deploying without NAT needs Private Link, which this template does not set up). |
 | NAT Gateway or outbound connectivity issues | Cluster nodes cannot reach the control plane | Verify the NAT Gateway is associated to both subnets and has a public IP. Check that NSG rules allow outbound traffic on port 443. |
 
 > **Note:** Terraform occasionally encounters transient errors during first-time deployments — particularly when cloud resources take a moment to fully propagate after being created. If you hit an unexpected error on `terraform apply`, a second run will often resolve it without any changes to the configuration.
@@ -244,7 +237,9 @@ Type `yes` when prompted. Destruction can take several minutes.
 This project uses a flat, organized structure with purpose-specific files instead of a monolithic `main.tf`:
 
 ```
-tf/
+infra-terraform/
+├── analyst_queries.tf          # Saved SQL queries for the analysts
+├── analysts.tf                 # Analyst group
 ├── azure.tf                    # Azure resources
 ├── cluster.tf                  # UC-compatible single-node cluster
 ├── databricks.tf               # Databricks workspace
@@ -262,7 +257,7 @@ tf/
 | **azure.tf** | Resource group for the Databricks workspace and Unity Catalog resources. |
 | **cluster.tf** | `databricks_spark_version` (latest LTS) data source and the `databricks_cluster` resource (standard/shared access mode, single node, no cluster policy). Sets node type, Spark version, auto-termination minutes, and the `ClusterType` tag. Depends on metastore assignment and workspace admin permission. |
 | **analysts.tf** | Analyst group `<resource_prefix>-analysts`, its members (`analyst_users`), workspace USER assignment and the Databricks SQL access entitlement. |
-| **analyst_queries.tf** | Saved SQL queries (`databricks_query`) for the demo's analyst block in `/Shared/<resource_prefix>-analyst-queries`: late deliveries per district and `ai_classify` on review texts (with a district dropdown). The analyst group gets CAN_RUN. Uses the warehouse named `sql_warehouse_name`. |
+| **analyst_queries.tf** | Saved SQL queries (`databricks_query`) for the analysts, in `/Shared/<resource_prefix>-analyst-queries`: late deliveries per district and `ai_classify` on review texts (with a district dropdown). The analyst group gets CAN_RUN. Uses the warehouse named `sql_warehouse_name`. |
 | **databricks.tf** | `azurerm_databricks_workspace` (Premium, VNet injection, No Public IP); metastore creation or assignment; workspace admin permissions; metastore owner group; analyst group with workspace USER access. |
 | **network.tf** | VNet and its resource group — created when `create_new_vnet = true`, or looked up via data sources when `create_new_vnet = false` (BYO existing VNet); NSG; public and private subnets (CIDRs from `subnet_public_cidr` and `subnet_private_cidr`); NAT Gateway with public IP and subnet associations. |
 | **providers.tf** | Azure and Databricks providers (workspace-level via workspace URL, account-level via accounts endpoint). Auth via Azure CLI. |

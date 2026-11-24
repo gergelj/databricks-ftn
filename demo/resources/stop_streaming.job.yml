@@ -1,5 +1,5 @@
 # The streaming pipeline is continuous: it runs (and costs serverless compute) until stopped.
-# After a dry run or the session:
+# Stop it when you are done:
 #   databricks bundle run stop_streaming -t dev
 resources:
   jobs:

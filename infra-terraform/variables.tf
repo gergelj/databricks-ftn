@@ -269,7 +269,7 @@ variable "subnet_private_cidr" {
 }
 
 variable "create_nat_gateway" {
-  description = "Create a NAT gateway for outbound internet access from the workspace subnets. This template has no Private Link, so clusters can only reach the Databricks control plane through the NAT gateway: false is rejected here. To deploy without NAT, use the azure-privatelink-classic template, which provides private connectivity."
+  description = "Create a NAT gateway for outbound internet access from the workspace subnets. This template has no Private Link, so clusters can only reach the Databricks control plane through the NAT gateway: false is rejected here. Deploying without NAT needs Private Link, which this template does not set up."
   type        = bool
   default     = true
 }

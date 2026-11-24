@@ -146,7 +146,7 @@ HOUR_WEIGHTS = {9: 1, 10: 2, 11: 4, 12: 9, 13: 9, 14: 6, 15: 4, 16: 4, 17: 6, 18
 # ---------- helpers (pure Python, no Spark) ----------
 
 def now_local() -> datetime:
-    """Wall-clock time in Novi Sad, without tz info (stored as-is, so students see local times)."""
+    """Wall-clock time in Novi Sad, without tz info (stored as-is, so you see local times)."""
     return datetime.now(TZ).replace(tzinfo=None, microsecond=0)
 
 

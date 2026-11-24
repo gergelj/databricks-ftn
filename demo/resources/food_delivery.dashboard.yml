@@ -1,4 +1,4 @@
-# AI/BI dashboard for the wow tour (block 0) and block 8: why are deliveries late, and which restaurants make money?
+# AI/BI dashboard: why are deliveries late, and which restaurants make money?
 # The datasets read the gold schema; dataset_catalog points them at the target's catalog.
 #   databricks bundle deploy -t dev
 # To pull UI edits back into the .lvdash.json file:

@@ -1,4 +1,4 @@
-# Between dry runs: stop streaming, delete everything generated, backfill again, rebuild both pipelines.
+# Back to a clean state: stop streaming, delete everything generated, backfill again, rebuild both pipelines.
 #   databricks bundle run food_delivery_reset -t dev --params confirm=yes
 resources:
   jobs:

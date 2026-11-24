@@ -1,4 +1,4 @@
-# Runs the data generator on serverless compute. Start it before the break:
+# Runs the data generator on serverless compute. Start it to get a steady stream of orders:
 #   databricks bundle run data_generator -t dev
 #   databricks bundle run data_generator -t dev --params duration_minutes=60
 #   databricks bundle run data_generator -t dev --params couriers=100   # more couriers = more orders per minute

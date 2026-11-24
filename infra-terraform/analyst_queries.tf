@@ -1,4 +1,4 @@
-# Saved SQL queries for the analysts (demo block 8): "Why are deliveries late?", answered from the numbers and
+# Saved SQL queries for the analysts: "Why are deliveries late?", answered from the numbers and
 # from the customers' review texts with an AI function. They read the gold schema of the user-defined catalog,
 # which the demo bundle (../demo) fills. Analysts get CAN_RUN on them; their data access comes from Unity Catalog.
 

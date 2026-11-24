@@ -1,4 +1,4 @@
-# Orchestration demo (block 5): when the nightly restaurants file lands in the volume,
+# File-arrival trigger: when the nightly restaurants file lands in the volume,
 # this job starts by itself and refreshes the batch pipeline (restaurants + gold reports).
 # Drop a file with: databricks bundle run data_generator -t dev --params mode=nightly_restaurants,duration_minutes=0
 # (or run the generator notebook with mode = nightly_restaurants).

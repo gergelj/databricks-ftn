@@ -35,6 +35,9 @@ targets:
   # Not "mode: development" on purpose: that mode turns continuous pipelines into triggered ones and
   # pauses schedules and file-arrival triggers, while this demo needs all three live. The presets keep
   # the parts of development mode we want.
+  #
+  # Forked this repo? Replace both `host` values with your workspace URL
+  # (the `workspace_url` output of ../infra-terraform).
   dev:
     default: true
     workspace:

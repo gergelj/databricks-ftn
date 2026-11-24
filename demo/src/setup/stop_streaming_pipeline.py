@@ -2,7 +2,7 @@
 # MAGIC %md
 # MAGIC # Stop the streaming pipeline
 # MAGIC
-# MAGIC Used by the reset job before it deletes the landing files. Also handy after a dry run:
+# MAGIC Used by the reset job before it deletes the landing files. Also handy when you are done:
 # MAGIC a continuous pipeline keeps running (and costs serverless compute) until it is stopped.
 
 # COMMAND ----------

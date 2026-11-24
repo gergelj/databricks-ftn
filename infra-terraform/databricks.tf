@@ -19,7 +19,7 @@ resource "azurerm_databricks_workspace" "this" {
   lifecycle {
     precondition {
       condition     = var.create_nat_gateway
-      error_message = "create_nat_gateway = false is not supported by this template: without Private Link, clusters reach the Databricks control plane only through the NAT gateway and would not launch. Use the azure-privatelink-classic template to deploy without NAT."
+      error_message = "create_nat_gateway = false is not supported by this template: without Private Link, clusters reach the Databricks control plane only through the NAT gateway and would not launch."
     }
   }
 

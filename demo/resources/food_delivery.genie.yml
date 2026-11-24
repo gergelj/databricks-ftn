@@ -1,4 +1,4 @@
-# Genie space for block 8: management asks its two questions in plain language.
+# Genie space: management asks its two questions in plain language.
 # Reads only the gold schema. The catalog comes from the target (dev: databricks_ftn_catalog, prod: databricks_ftn_prod).
 #   databricks bundle deploy -t dev
 # To pull UI edits back into this file:

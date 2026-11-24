@@ -1,8 +1,8 @@
 # Databricks notebook source
 # MAGIC %md
-# MAGIC # 02 Streaming, live (block 6)
+# MAGIC # 02 Streaming, live
 # MAGIC
-# MAGIC "Let's see what happened while you were away." The generator kept writing files during the break.
+# MAGIC Start the data generator first (`databricks bundle run data_generator -t dev`), so new files keep arriving.
 # MAGIC
 # MAGIC Run this notebook on the **classic cluster** (`databricks-ftn-uc-cluster`): continuously updating
 # MAGIC `display()` of a stream needs a cluster that stays up. Serverless notebooks run streams with

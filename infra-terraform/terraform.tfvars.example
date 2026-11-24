@@ -42,7 +42,7 @@ subnet_public_cidr  = "10.0.0.0/24"
 subnet_private_cidr = "10.0.1.0/24"
 
 # NAT gateway for outbound access. This template has no Private Link, so it must stay true
-# (clusters would not launch without it). To deploy without NAT use azure-privatelink-classic.
+# (clusters would not launch without it).
 create_nat_gateway = true
 nat_gateway_zones  = ["1"]   # at most one zone; [] for regions without zones
 
