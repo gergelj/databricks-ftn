@@ -24,7 +24,8 @@ resource "databricks_cluster" "uc_single_node" {
   kind           = "CLASSIC_PREVIEW"
 
   custom_tags = {
-    "ClusterType" = "TerraformDeploymentTesting"
+    "ClusterType" = "TerraformDeploymentTesting",
+    "ResourceClass" = "SingleNode"
   }
 
   lifecycle {
