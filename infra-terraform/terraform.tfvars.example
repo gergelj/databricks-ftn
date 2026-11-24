@@ -58,6 +58,10 @@ databricks_account_id = "00000000-0000-0000-0000-000000000000"
 admin_users = ["you@company.com", "colleague@company.com"]
 # admin_group_name = ""   # default: <new_metastore_name>-admins, or <resource_prefix>-admins
 
+# Databricks account users (emails) added to the analyst group <resource_prefix>-analysts.
+# The group is assigned to the workspace as users; data access is granted in Unity Catalog.
+analyst_users = ["analyst@company.com"]
+
 # =============================================================================
 # Unity Catalog metastore: set ONE of these, or neither to attach one manually.
 # =============================================================================

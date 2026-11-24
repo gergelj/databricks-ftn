@@ -1,0 +1,21 @@
+# Orchestration demo (block 5): when the nightly restaurants file lands in the volume,
+# this job starts by itself and refreshes the batch pipeline (restaurants + gold reports).
+# Drop a file with: databricks bundle run data_generator -t dev --params mode=nightly_restaurants,duration_minutes=0
+# (or run the generator notebook with mode = nightly_restaurants).
+resources:
+  jobs:
+    restaurant_refresh:
+      name: food_delivery_on_new_restaurant_file
+      description: Refreshes the batch pipeline when a new restaurants CSV arrives in the landing volume.
+      trigger:
+        # The demo needs the trigger live (`mode: development` would pause it; see databricks.yml).
+        pause_status: UNPAUSED
+        file_arrival:
+          url: /Volumes/${var.catalog}/landing/raw/restaurants/
+          min_time_between_triggers_seconds: 60
+          wait_after_last_change_seconds: 60
+      max_concurrent_runs: 1
+      tasks:
+        - task_key: refresh_pipeline
+          pipeline_task:
+            pipeline_id: ${resources.pipelines.food_delivery_batch.id}

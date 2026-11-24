@@ -1,0 +1,18 @@
+# Scheduled batch run: refreshes the restaurant catalog and all gold reports every morning,
+# so the daily revenue report is ready when management starts the day.
+# On demand: databricks bundle run food_delivery_batch -t dev (or run this job).
+resources:
+  jobs:
+    daily_batch:
+      name: food_delivery_daily_batch
+      description: Refreshes the batch pipeline (restaurants and gold reports) every morning at 06:00 Novi Sad time.
+      schedule:
+        quartz_cron_expression: "0 0 6 * * ?"
+        timezone_id: Europe/Belgrade
+        # Explicit: `mode: development` would pause it (see databricks.yml).
+        pause_status: UNPAUSED
+      max_concurrent_runs: 1
+      tasks:
+        - task_key: refresh_batch_pipeline
+          pipeline_task:
+            pipeline_id: ${resources.pipelines.food_delivery_batch.id}

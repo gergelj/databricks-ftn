@@ -1,0 +1,16 @@
+# The streaming pipeline is continuous: it runs (and costs serverless compute) until stopped.
+# After a dry run or the session:
+#   databricks bundle run stop_streaming -t dev
+resources:
+  jobs:
+    stop_streaming:
+      name: food_delivery_stop_streaming
+      description: Stops the continuous streaming pipeline.
+      max_concurrent_runs: 1
+      parameters:
+        - name: streaming_pipeline_id
+          default: ${resources.pipelines.food_delivery_streaming.id}
+      tasks:
+        - task_key: stop_streaming_pipeline
+          notebook_task:
+            notebook_path: ../src/setup/stop_streaming_pipeline.py

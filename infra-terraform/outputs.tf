@@ -85,6 +85,11 @@ output "external_location_name" {
   value       = one(databricks_external_location.db_ext_loc[*].name)
 }
 
+output "analyst_group_name" {
+  description = "Name of the account-level analyst group (<resource_prefix>-analysts)"
+  value       = databricks_group.analysts.display_name
+}
+
 output "catalog_name" {
   description = "Name of the user-defined Unity Catalog catalog (null when new_catalog is false)"
   value       = one(databricks_catalog.uc_quickstart_sandbox[*].name)

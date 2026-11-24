@@ -88,6 +88,26 @@ variable "admin_group_name" {
   default     = ""
 }
 
+variable "sql_warehouse_name" {
+  description = "Name of an existing SQL warehouse that runs the saved analyst queries (analyst_queries.tf)."
+  type        = string
+  default     = "Serverless Starter Warehouse"
+}
+
+variable "analyst_users" {
+  description = "Databricks account users (emails) added to the analyst group \"<resource_prefix>-analysts\". The group is assigned to the workspace as users and gets no data privileges here; grant them in Unity Catalog (e.g. SELECT on the gold schema). Leave empty for an empty group."
+  type        = list(string)
+  default     = []
+  validation {
+    condition     = alltrue([for u in var.analyst_users : trimspace(u) != ""])
+    error_message = "analyst_users must not contain empty strings."
+  }
+  validation {
+    condition     = length(distinct(var.analyst_users)) == length(var.analyst_users)
+    error_message = "analyst_users must not contain duplicates."
+  }
+}
+
 variable "root_storage_name" {
   description = "Name of the workspace root (DBFS) storage account: lowercase letters and numbers only, 3-24 characters, globally unique. Leave empty to derive it from resource_prefix (\"dbfs\" + up to 20 alphanumeric characters)."
   type        = string
