@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Courier live map · Novi Sad</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <style>
+    :root {
+      --to-restaurant: #2563eb;   /* blue: riding to the restaurant */
+      --delivering: #ea580c;      /* orange: food on board */
+      --idle: #6b7280;            /* grey: waiting for an order */
+      --text: #111827; --muted: #6b7280; --border: #e5e7eb; --bg: #f9fafb;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; color: var(--text); background: var(--bg); }
+    header { display: flex; align-items: center; gap: 24px; padding: 12px 20px; background: #fff; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+    h1 { font-size: 18px; margin: 0; font-weight: 600; }
+    .subtitle { color: var(--muted); font-size: 13px; }
+    .kpis { display: flex; gap: 12px; margin-left: auto; flex-wrap: wrap; }
+    .kpi { padding: 6px 12px; border: 1px solid var(--border); border-radius: 8px; min-width: 120px; background: #fff; }
+    .kpi .label { font-size: 12px; color: var(--muted); display: flex; align-items: center; gap: 6px; }
+    .kpi .value { font-size: 20px; font-weight: 600; font-variant-numeric: tabular-nums; }
+    .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+    #status { font-size: 12px; color: var(--muted); }
+    #status.stale { color: #b91c1c; font-weight: 600; }
+    #map { height: calc(100vh - 64px); }
+    .banner { position: absolute; z-index: 1000; top: 80px; left: 50%; transform: translateX(-50%); background: #fff;
+              border: 1px solid var(--border); border-radius: 8px; padding: 10px 16px; box-shadow: 0 2px 8px rgba(0,0,0,.08);
+              font-size: 14px; display: none; max-width: 560px; text-align: center; }
+    .banner.error { border-color: #fca5a5; color: #991b1b; }
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <h1>Courier live map</h1>
+      <div class="subtitle">Novi Sad · GPS pings from Lakebase, synced continuously from <code>silver.gps_events</code></div>
+    </div>
+    <div class="kpis">
+      <div class="kpi"><div class="label"><span class="dot" style="background:var(--to-restaurant)"></span>To restaurant</div><div class="value" id="k-to_restaurant">–</div></div>
+      <div class="kpi"><div class="label"><span class="dot" style="background:var(--delivering)"></span>Delivering</div><div class="value" id="k-delivering">–</div></div>
+      <div class="kpi"><div class="label"><span class="dot" style="background:var(--idle)"></span>Waiting for order</div><div class="value" id="k-idle">–</div></div>
+      <div class="kpi"><div class="label">Latest ping</div><div class="value" id="k-latest">–</div><div id="status">loading…</div></div>
+    </div>
+  </header>
+  <div id="banner" class="banner"></div>
+  <div id="map"></div>
+
+  <script>
+    const REFRESH_MS = 3000;
+    const COLORS = { to_restaurant: "#2563eb", delivering: "#ea580c", idle: "#6b7280" };
+    const LABELS = { to_restaurant: "riding to the restaurant", delivering: "delivering", idle: "waiting for an order" };
+
+    const map = L.map("map").setView([45.2500, 19.8400], 13);
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      maxZoom: 18, attribution: "&copy; OpenStreetMap contributors",
+    }).addTo(map);
+
+    const markers = new Map();   // courier_id -> circle marker
+    const trails = new Map();    // courier_id -> polyline
+
+    function showBanner(text, isError) {
+      const el = document.getElementById("banner");
+      el.textContent = text;
+      el.className = "banner" + (isError ? " error" : "");
+      el.style.display = text ? "block" : "none";
+    }
+
+    function popup(c) {
+      return `<b>${c.courier_id}</b> · order #${c.order_id}<br>${LABELS[c.status] || c.status}` +
+             `<br>${c.speed_kmh ? c.speed_kmh + " km/h · " : ""}seen ${c.seconds_ago}s ago`;
+    }
+
+    function render(data) {
+      const seen = new Set();
+      for (const c of data.couriers) {
+        seen.add(c.courier_id);
+        const color = COLORS[c.status] || COLORS.idle;
+        let m = markers.get(c.courier_id);
+        if (!m) {
+          m = L.circleMarker([c.lat, c.lon], { radius: 7, weight: 2, color: "#fff", fillOpacity: 0.95 }).addTo(map);
+          markers.set(c.courier_id, m);
+        }
+        m.setLatLng([c.lat, c.lon]);
+        m.setStyle({ fillColor: color });
+        m.bindPopup(popup(c));
+
+        let t = trails.get(c.courier_id);
+        if (!t) { t = L.polyline([], { weight: 3, opacity: 0.5 }).addTo(map); trails.set(c.courier_id, t); }
+        t.setLatLngs(c.status === "idle" ? [] : c.trail);
+        t.setStyle({ color });
+      }
+      for (const [id, m] of markers) {          // couriers that went quiet
+        if (!seen.has(id)) { map.removeLayer(m); markers.delete(id); map.removeLayer(trails.get(id)); trails.delete(id); }
+      }
+
+      for (const k of ["to_restaurant", "delivering", "idle"]) document.getElementById("k-" + k).textContent = data.counts[k];
+      document.getElementById("k-latest").textContent = data.latest_ping ? data.latest_ping.slice(11) : "–";
+      const status = document.getElementById("status");
+      if (data.data_age_seconds === null) {
+        status.textContent = "no data"; status.className = "stale";
+      } else {
+        status.textContent = `${data.data_age_seconds}s ago`;
+        status.className = data.data_age_seconds > 60 ? "stale" : "";
+      }
+      showBanner(data.couriers.length ? "" :
+        "No courier activity in the last 30 minutes. Start the generator: databricks bundle run data_generator -t dev", false);
+    }
+
+    async function refresh() {
+      try {
+        const res = await fetch("api/couriers", { cache: "no-store" });
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}));
+          throw new Error(body.error || `HTTP ${res.status}`);
+        }
+        render(await res.json());
+      } catch (err) {
+        showBanner(`Can't load courier positions (${err.message}). Retrying…`, true);
+        document.getElementById("status").textContent = "connection problem";
+        document.getElementById("status").className = "stale";
+      } finally {
+        setTimeout(refresh, REFRESH_MS);
+      }
+    }
+    refresh();
+  </script>
+</body>
+</html>

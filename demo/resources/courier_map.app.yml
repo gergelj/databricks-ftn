@@ -1,0 +1,22 @@
+# Live courier map (Databricks App, FastAPI + Leaflet). Reads live.courier_gps from Lakebase.
+#   databricks bundle deploy -t dev
+#   databricks bundle run courier_map -t dev        # deploy the source code and start the app
+#   databricks bundle run live_map_grants -t dev    # once: let the app read the synced table
+resources:
+  apps:
+    courier_map:
+      name: courier-map
+      description: Live map of the food delivery couriers in Novi Sad, from Lakebase.
+      source_code_path: ../src/apps/courier_map
+      resources:
+        - name: postgres
+          description: Lakebase database with the synced courier GPS table
+          postgres:
+            branch: ${resources.postgres_projects.live_map_db.name}/branches/production
+            database: ${resources.postgres_projects.live_map_db.name}/branches/production/databases/databricks-postgres
+            permission: CAN_CONNECT_AND_CREATE
+      permissions:
+        - group_name: ${var.admin_group}
+          level: CAN_MANAGE
+        - group_name: ${var.analyst_group}
+          level: CAN_USE

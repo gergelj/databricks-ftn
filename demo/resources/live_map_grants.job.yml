@@ -1,0 +1,16 @@
+# Once, after the first `databricks bundle run courier_map -t dev`:
+#   databricks bundle run live_map_grants -t dev
+# Grants the live map app's service principal read access to the synced table in Lakebase.
+resources:
+  jobs:
+    live_map_grants:
+      name: food_delivery_live_map_grants
+      description: Grants the courier map app read access to live.courier_gps in Lakebase.
+      max_concurrent_runs: 1
+      parameters:
+        - name: app_name
+          default: ${resources.apps.courier_map.name}
+      tasks:
+        - task_key: grant_app_access
+          notebook_task:
+            notebook_path: ../src/setup/grant_live_map_access.py

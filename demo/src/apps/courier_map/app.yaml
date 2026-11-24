@@ -1,0 +1,11 @@
+# Databricks Apps runtime configuration.
+# The Lakebase connection settings (PGHOST, PGPORT, PGDATABASE, PGUSER, PGSSLMODE, LAKEBASE_ENDPOINT)
+# are injected automatically from the app's "postgres" resource (resources/courier_map.app.yml).
+command: ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000"]
+env:
+  - name: LAKEBASE_ENDPOINT       # Lakebase compute endpoint used to create the OAuth Postgres password
+    value: projects/food-delivery-live/branches/production/endpoints/primary
+  - name: ACTIVE_WINDOW_MINUTES   # show couriers that sent a ping in the last N minutes
+    value: "30"
+  - name: TRAIL_MINUTES           # length of the trail behind each courier
+    value: "3"

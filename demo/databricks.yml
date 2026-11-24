@@ -19,6 +19,9 @@ variables:
   admin_group:
     description: Account group that sees unmasked PII (created by Terraform)
     default: databricks-ftn-admins
+  analyst_group:
+    description: Account group of the analysts (created by Terraform)
+    default: databricks-ftn-analysts
   streaming_continuous:
     description: true = the streaming pipeline runs continuously, false = triggered updates. Same code, different trigger.
     default: true

@@ -17,7 +17,7 @@
 # MAGIC | Mode | What it does |
 # MAGIC |---|---|
 # MAGIC | `backfill` | 7 days of history, the customer snapshot and the first restaurants file. Runs once (skipped if history exists). |
-# MAGIC | `stream` | new orders and GPS pings every few seconds, customer address changes now and then |
+# MAGIC | `stream` | live: `couriers` couriers deliver orders in real time, each sends a GPS ping every few seconds; customer address changes now and then |
 # MAGIC | `nightly_restaurants` | drops a new restaurants CSV (one new restaurant, changed prep times). Starts the file-arrival job. |
 # MAGIC | `bad_records` | planned failure: negative amount, missing restaurant, unparsable amount, GPS ping outside Novi Sad |
 # MAGIC | `late_event` | planned failure: one order delivered 40 min ago (beyond the watermark) and one 3 min ago (within it) |
@@ -438,32 +438,102 @@ def run_backfill():
           f"from {history['start_day']} until now. Order #{STORY_ORDER_ID} is in orders_{history['start_day']:%Y%m%d}_history.json")
 
 
+def interpolate(a, b, frac: float):
+    frac = min(max(frac, 0.0), 1.0)
+    return (round(a[0] + (b[0] - a[0]) * frac, 6), round(a[1] + (b[1] - a[1]) * frac, 6))
+
+
+def shift_order(order: dict, pings: list, delta: timedelta) -> None:
+    for key in ("order_ts", "promised_delivery_ts", "picked_up_ts", "delivered_ts"):
+        order[key] = ts(datetime.fromisoformat(order[key]) + delta)
+    for ping in pings:
+        ping["event_ts"] = ts(datetime.fromisoformat(ping["event_ts"]) + delta)
+
+
+def dispatch(courier_id: str, position, now: datetime, order_id: int, customers: dict, restaurants: list, rng) -> dict:
+    """Give an idle courier a new order: ride to the restaurant, pick up, ride to the customer."""
+    customer = customers[rng.choice(list(customers))]
+    order, pings = make_order(order_id, rng.choice(restaurants), customer, rng, order_ts=now, with_tip=WITH_TIP)
+    order["courier_id"] = courier_id
+    restaurant_point = (pings[0]["latitude"], pings[0]["longitude"])
+    customer_point = (pings[2]["latitude"], pings[2]["longitude"])
+    # The kitchen started earlier; the courier is sent so that they arrive when the food is ready.
+    approach = timedelta(minutes=2 + km_between(position, restaurant_point) * 3.2)
+    shift_order(order, pings, (now + approach) - datetime.fromisoformat(order["picked_up_ts"]))
+    return {
+        "order": order, "start": position, "restaurant": restaurant_point, "customer": customer_point,
+        "dispatched": now, "pickup": datetime.fromisoformat(order["picked_up_ts"]),
+        "delivered": datetime.fromisoformat(order["delivered_ts"]), "picked_up": False,
+    }
+
+
+def gps_ping(courier_id: str, order_id: int, event_type: str, at: datetime, point, speed_kmh: float = 0.0) -> dict:
+    return {"courier_id": courier_id, "order_id": order_id, "event_type": event_type, "event_ts": ts(at),
+            "latitude": point[0], "longitude": point[1], "speed_kmh": round(speed_kmh, 1)}
+
+
+def live_ping(courier_id: str, d: dict, now: datetime) -> dict:
+    """Where is the courier right now? Straight line, constant speed per leg."""
+    if now < d["pickup"]:
+        a, b, t0, t1, event_type = d["start"], d["restaurant"], d["dispatched"], d["pickup"], "to_restaurant"
+    else:
+        a, b, t0, t1, event_type = d["restaurant"], d["customer"], d["pickup"], d["delivered"], "en_route"
+    seconds = max((t1 - t0).total_seconds(), 1.0)
+    point = interpolate(a, b, (now - t0).total_seconds() / seconds)
+    return gps_ping(courier_id, d["order"]["order_id"], event_type, now, point, km_between(a, b) / (seconds / 3600))
+
+
 def run_stream():
+    """Live mode: a fleet of couriers delivers orders in real time.
+
+    Every batch, each courier on the road sends a GPS ping (to_restaurant / en_route); a pickup and a
+    delivered ping mark the hand-overs, and the order event is written when the delivery is done.
+    """
     rng = random.Random()
     customers = read_state("customers")
     order_state = read_state("orders")
     if not customers or not order_state:
         raise RuntimeError("No generator state found. Run the backfill (demo setup job) first.")
     next_id = order_state["next_order_id"]
+    start = now_local()
+    couriers = {
+        f"C{i:02d}": {"position": jitter(rng.choice(list(DISTRICTS.values())), rng, 800), "delivery": None,
+                      "idle_until": start + timedelta(seconds=rng.uniform(0, 60))}
+        for i in range(1, COURIERS + 1)
+    }
     end = time.time() + DURATION_MINUTES * 60
     batch = 0
-    print(f"Streaming for {DURATION_MINUTES} min, one batch every {INTERVAL_SECONDS}s, starting at order #{next_id}")
+    print(f"Streaming for {DURATION_MINUTES} min with {COURIERS} couriers, a GPS ping every {INTERVAL_SECONDS}s, "
+          f"starting at order #{next_id}")
     while time.time() < end:
         now = now_local()
         customers = read_state("customers") or customers  # picks up changes from a customer_changes burst
         restaurants = [r for r in current_restaurants() if r["is_active"].lower() == "true"]
         orders, gps = [], []
-        for _ in range(max(1, int(rng.gauss(ORDERS_PER_BATCH, 2)))):
-            customer = customers[rng.choice(list(customers))]
-            delivered_at = now - timedelta(seconds=rng.randint(0, 20))
-            order, pings = make_order(next_id, rng.choice(restaurants), customer, rng,
-                                      delivered_at=delivered_at, with_tip=WITH_TIP)
-            orders.append(order)
-            gps.extend(pings)
-            next_id += 1
+        for courier_id, courier in couriers.items():
+            d = courier["delivery"]
+            if d is None:
+                if now < courier["idle_until"]:
+                    continue
+                d = courier["delivery"] = dispatch(courier_id, courier["position"], now, next_id, customers, restaurants, rng)
+                next_id += 1
+            order_id = d["order"]["order_id"]
+            if not d["picked_up"] and now >= d["pickup"]:
+                d["picked_up"] = True
+                gps.append(gps_ping(courier_id, order_id, "pickup", d["pickup"], d["restaurant"]))
+            if now >= d["delivered"]:
+                gps.append(gps_ping(courier_id, order_id, "delivered", d["delivered"], d["customer"]))
+                orders.append(d["order"])
+                courier.update(position=d["customer"], delivery=None,
+                               idle_until=now + timedelta(seconds=rng.uniform(30, 180)))
+            else:
+                gps.append(live_ping(courier_id, d, now))
+
         tag = stamp()
-        write_jsonl(f"{LANDING}/orders/orders_{tag}.json", orders)
-        write_jsonl(f"{LANDING}/gps/gps_{tag}.json", gps)
+        if gps:
+            write_jsonl(f"{LANDING}/gps/gps_{tag}.json", gps)
+        if orders:
+            write_jsonl(f"{LANDING}/orders/orders_{tag}.json", orders)
 
         if batch % 12 == 11:  # roughly once a minute: someone moves
             cid = rng.choice([k for k in customers if int(k) != STORY_CUSTOMER_ID])
@@ -473,10 +543,12 @@ def run_stream():
             print(f"  customer {cid} moved to {customers[cid]['district']}")
 
         write_state("orders", {"next_order_id": next_id})
-        print(f"[{now:%H:%M:%S}] batch {batch}: {len(orders)} orders (last #{next_id - 1})")
+        on_the_road = sum(1 for c in couriers.values() if c["delivery"])
+        print(f"[{now:%H:%M:%S}] batch {batch}: {on_the_road} couriers on the road, {len(gps)} pings, "
+              f"{len(orders)} delivered")
         batch += 1
         time.sleep(INTERVAL_SECONDS)
-    print(f"Done after {batch} batches.")
+    print(f"Done after {batch} batches. Deliveries still on the road are dropped.")
 
 
 def run_nightly_restaurants():
@@ -610,7 +682,7 @@ dbutils.widgets.dropdown(
 dbutils.widgets.text("catalog", "databricks_ftn_catalog")
 dbutils.widgets.text("duration_minutes", "30")
 dbutils.widgets.text("interval_seconds", "5")
-dbutils.widgets.text("orders_per_batch", "6")
+dbutils.widgets.text("couriers", "60")
 dbutils.widgets.text("backfill_days", "7")
 dbutils.widgets.dropdown("with_tip", "false", ["false", "true"])
 dbutils.widgets.text("customer_changes", "5")
@@ -620,7 +692,7 @@ MODE = dbutils.widgets.get("mode")
 CATALOG = dbutils.widgets.get("catalog")
 DURATION_MINUTES = float(dbutils.widgets.get("duration_minutes"))
 INTERVAL_SECONDS = float(dbutils.widgets.get("interval_seconds"))
-ORDERS_PER_BATCH = int(dbutils.widgets.get("orders_per_batch"))
+COURIERS = int(dbutils.widgets.get("couriers"))
 BACKFILL_DAYS = int(dbutils.widgets.get("backfill_days"))
 WITH_TIP = dbutils.widgets.get("with_tip") == "true"
 CUSTOMER_CHANGES = int(dbutils.widgets.get("customer_changes"))

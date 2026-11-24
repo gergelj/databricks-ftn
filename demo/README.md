@@ -130,7 +130,7 @@ All three sources at a glance:
 
 | Source | Continuous | On demand |
 |---|---|---|
-| Orders + courier GPS (JSON) | `mode=stream` | `mode=bad_records`, `late_event`, `schema_change` |
+| Orders + courier GPS (JSON) | `mode=stream` (live couriers, a ping every 5 s) | `mode=bad_records`, `late_event`, `schema_change` |
 | Customer changes (CDC, JSON) | one move per minute in `mode=stream` | `mode=customer_changes` |
 | Restaurant catalog (CSV) | - | `mode=nightly_restaurants` |
 

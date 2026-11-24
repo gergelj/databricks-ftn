@@ -1,6 +1,7 @@
 # Runs the data generator on serverless compute. Start it before the break:
 #   databricks bundle run data_generator -t dev
 #   databricks bundle run data_generator -t dev --params duration_minutes=60
+#   databricks bundle run data_generator -t dev --params couriers=100   # more couriers = more orders per minute
 # One-off drops (one file, then stop):
 #   --params mode=nightly_restaurants          new restaurants CSV snapshot
 #   --params mode=customer_changes             CDC burst: 5 moves, 1 phone change, 1 new customer, 1 delete
@@ -22,8 +23,8 @@ resources:
           default: "30"
         - name: interval_seconds
           default: "5"
-        - name: orders_per_batch
-          default: "6"
+        - name: couriers
+          default: "60"
         - name: with_tip
           default: "false"
         - name: customer_changes

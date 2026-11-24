@@ -107,7 +107,13 @@ def silver_orders_quarantine():
 # -----------------------------------------------------------------------------
 # GPS: drop pings outside Novi Sad (GPS glitches such as 0,0).
 # -----------------------------------------------------------------------------
-@dp.table(name="silver.gps_events", comment="Courier GPS pings inside the Novi Sad area.")
+# Change Data Feed: the Lakebase synced table (resources/live_map.lakebase.yml) streams new pings from here
+# into Postgres for the live courier map app.
+@dp.table(
+    name="silver.gps_events",
+    comment="Courier GPS pings inside the Novi Sad area.",
+    table_properties={"delta.enableChangeDataFeed": "true"},
+)
 @dp.expect_all_or_drop({
     "has_courier": "courier_id IS NOT NULL",
     "inside_novi_sad": "latitude BETWEEN 45.15 AND 45.35 AND longitude BETWEEN 19.65 AND 19.98",
