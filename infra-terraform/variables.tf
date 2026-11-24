@@ -88,6 +88,12 @@ variable "admin_group_name" {
   default     = ""
 }
 
+variable "sql_warehouse_name" {
+  description = "Name of an existing SQL warehouse that runs the saved analyst queries (analyst_queries.tf)."
+  type        = string
+  default     = "Serverless Starter Warehouse"
+}
+
 variable "analyst_users" {
   description = "Databricks account users (emails) added to the analyst group \"<resource_prefix>-analysts\". The group is assigned to the workspace as users and gets no data privileges here; grant them in Unity Catalog (e.g. SELECT on the gold schema). Leave empty for an empty group."
   type        = list(string)

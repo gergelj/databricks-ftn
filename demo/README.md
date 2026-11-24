@@ -66,7 +66,6 @@ demo/
     notebooks/01_batch_ingestion.py           block 5: CSV schema inference, Auto Loader + checkpoints, time travel
     notebooks/02_streaming_live.py            block 6: live-updating stream in a notebook
     analyst/01_analyst_access.sql             block 8: grants for the analysts group, masked columns
-    analyst/02_why_late_ai.sql                block 8: ai_classify on review texts
   data/restaurants.csv                        20 fictional Novi Sad restaurants
 ```
 
@@ -110,7 +109,7 @@ only records which files already exist.
 | Break | `databricks bundle run data_generator -t dev --params duration_minutes=40` (runs in the background) |
 | 6. Streaming | Notebook `02_streaming_live` on the classic cluster (live counter). Then the streaming pipeline (`src/pipelines/streaming/`): it has been running all along, the counts in its graph keep growing. Key message: same code as the batch pipeline (Auto Loader, Python + SQL), different trigger: `continuous: true`. Planned failures: `mode=late_event` (watermark), `mode=schema_change` (`tip_amount` appears in `bronze.orders`). |
 | 7. DABs | `databricks.yml`, `resources/`, `bundle validate`, `bundle deploy`. Live change idea: add `o.tip_amount` to `silver.orders`, deploy, refresh. |
-| 8. Analyst view | `src/analyst/01_analyst_access.sql` (grants, masking), lineage of `gold.late_deliveries_per_district`, Genie, `src/analyst/02_why_late_ai.sql` (`ai_classify`). |
+| 8. Analyst view | `src/analyst/01_analyst_access.sql` (grants, masking), lineage of `gold.late_deliveries_per_district`, Genie, then the saved queries in `/Shared/databricks-ftn-analyst-queries` ("Why late 1-3", `ai_classify` on review texts, district dropdown). They are Terraform `databricks_query` resources in `../infra-terraform/analyst_queries.tf`, so analysts can run them. |
 
 Generator modes (job parameter `mode`, or the notebook widget):
 
