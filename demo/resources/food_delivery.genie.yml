@@ -1,0 +1,157 @@
+# Genie space for block 8: management asks its two questions in plain language.
+# Reads only the gold schema. The catalog comes from the target (dev: databricks_ftn_catalog, prod: databricks_ftn_prod).
+#   databricks bundle deploy -t dev
+# To pull UI edits back into this file:
+#   databricks bundle generate genie-space --existing-id <space-id> --key food_delivery_genie --force
+resources:
+  genie_spaces:
+    food_delivery_genie:
+      title: Food delivery Novi Sad
+      description: Ask questions about deliveries, lateness and restaurant revenue in Novi Sad (gold tables of the food delivery
+        demo).
+      warehouse_id: ${var.warehouse_id}
+      permissions:
+      - group_name: ${var.admin_group}
+        level: CAN_MANAGE
+      - group_name: ${var.analyst_group}
+        level: CAN_RUN
+      serialized_space:
+        version: 2
+        config:
+          sample_questions:
+          - id: 7c214ae87aac404c965d75c1ccd20001
+            question:
+            - Why are deliveries late in Liman?
+          - id: 7c214ae87aac404c965d75c1ccd20002
+            question:
+            - Which district had the most late deliveries yesterday?
+          - id: 7c214ae87aac404c965d75c1ccd20003
+            question:
+            - Which restaurants had the highest revenue this week?
+          - id: 7c214ae87aac404c965d75c1ccd20004
+            question:
+            - At what time of day are deliveries most often late?
+        data_sources:
+          tables:
+          - identifier: ${var.catalog}.gold.avg_delivery_time_per_district_5min
+          - identifier: ${var.catalog}.gold.daily_revenue_per_restaurant
+            column_configs:
+            - column_name: cuisine
+              enable_entity_matching: true
+            - column_name: restaurant_district
+              enable_entity_matching: true
+            - column_name: restaurant_name
+              enable_entity_matching: true
+          - identifier: ${var.catalog}.gold.deliveries
+            column_configs:
+            - column_name: cuisine
+              enable_entity_matching: true
+            - column_name: delivery_district
+              enable_entity_matching: true
+              synonyms:
+              - neighbourhood
+              - area
+              - part of town
+              - kvart
+            - column_name: restaurant_name
+              enable_entity_matching: true
+            - column_name: review_text
+              description:
+              - Free-text customer review. Use it to explain WHY an order was late.
+              synonyms:
+              - complaint
+              - feedback
+              - comment
+          - identifier: ${var.catalog}.gold.late_deliveries_per_district
+            column_configs:
+            - column_name: delivery_district
+              enable_entity_matching: true
+        instructions:
+          text_instructions:
+          - id: 7c214ae87aac404c965d75c1ccd20005
+            content:
+            - 'You answer questions for the management of a food delivery startup in Novi Sad (Serbia).
+
+              The two main questions are: why are deliveries late, and which restaurants make money?
+
+              - Amounts are in Serbian dinars (RSD). Timestamps are Novi Sad local time.
+
+              - An order is late when is_late is true; delay_minutes is how many minutes after the promised time it arrived.
+
+              - Use deliveries for order-level questions and for WHY questions: summarise review_text of late orders to give
+              reasons.
+
+              - Use late_deliveries_per_district for lateness by district and hour, and daily_revenue_per_restaurant for revenue.
+
+              - Use avg_delivery_time_per_district_5min only for live / last-hour questions.
+
+              - When asked about late deliveries, show the share of late orders (late_pct) next to the counts.
+
+              - Answer briefly and state the time period you used.'
+          example_question_sqls:
+          - id: 7c214ae87aac404c965d75c1ccd20006
+            question:
+            - Which districts have the most late deliveries?
+            sql:
+            - 'SELECT delivery_district,
+
+              '
+            - '  COUNT(*) AS orders,
+
+              '
+            - '  COUNT_IF(is_late) AS late_orders,
+
+              '
+            - '  ROUND(COUNT_IF(is_late) * 100 / COUNT(*), 1) AS late_pct
+
+              '
+            - 'FROM ${var.catalog}.gold.deliveries
+
+              '
+            - 'GROUP BY delivery_district
+
+              '
+            - ORDER BY late_pct DESC
+          - id: 7c214ae87aac404c965d75c1ccd20007
+            question:
+            - Why are deliveries late in Liman?
+            sql:
+            - 'SELECT review_text, COUNT(*) AS orders
+
+              '
+            - 'FROM ${var.catalog}.gold.deliveries
+
+              '
+            - 'WHERE is_late AND review_text IS NOT NULL AND delivery_district = ''Liman''
+
+              '
+            - 'GROUP BY review_text
+
+              '
+            - ORDER BY orders DESC
+          - id: 7c214ae87aac404c965d75c1ccd20008
+            question:
+            - Which restaurants had the highest revenue this week?
+            sql:
+            - 'SELECT restaurant_name, cuisine,
+
+              '
+            - '  SUM(orders) AS orders,
+
+              '
+            - '  ROUND(SUM(revenue_rsd)) AS revenue_rsd
+
+              '
+            - 'FROM ${var.catalog}.gold.daily_revenue_per_restaurant
+
+              '
+            - 'WHERE order_date >= date_sub(current_date(), 7)
+
+              '
+            - 'GROUP BY restaurant_name, cuisine
+
+              '
+            - 'ORDER BY revenue_rsd DESC
+
+              '
+            - LIMIT 10

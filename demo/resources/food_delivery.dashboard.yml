@@ -1,0 +1,20 @@
+# AI/BI dashboard for the wow tour (block 0) and block 8: why are deliveries late, and which restaurants make money?
+# The datasets read the gold schema; dataset_catalog points them at the target's catalog.
+#   databricks bundle deploy -t dev
+# To pull UI edits back into the .lvdash.json file:
+#   databricks bundle generate dashboard --resource food_delivery_dashboard --force
+resources:
+  dashboards:
+    food_delivery_dashboard:
+      display_name: Food delivery Novi Sad
+      file_path: ../src/dashboards/food_delivery.lvdash.json
+      warehouse_id: ${var.warehouse_id}
+      dataset_catalog: ${var.catalog}
+      dataset_schema: gold
+      # Viewers query with their own permissions, so analysts see masked data and only gold.
+      embed_credentials: false
+      permissions:
+        - group_name: ${var.admin_group}
+          level: CAN_MANAGE
+        - group_name: ${var.analyst_group}
+          level: CAN_RUN

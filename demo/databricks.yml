@@ -22,6 +22,10 @@ variables:
   analyst_group:
     description: Account group of the analysts (created by Terraform)
     default: databricks-ftn-analysts
+  warehouse_id:
+    description: SQL warehouse for the dashboard and the Genie space
+    lookup:
+      warehouse: Serverless Starter Warehouse
   streaming_continuous:
     description: true = the streaming pipeline runs continuously, false = triggered updates. Same code, different trigger.
     default: true

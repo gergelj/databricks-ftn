@@ -51,6 +51,8 @@ demo/
     demo_setup.job.yml                        one-time setup
     demo_reset.job.yml                        reset between dry runs
     stop_streaming.job.yml                    stop the continuous pipeline
+    food_delivery.dashboard.yml               AI/BI dashboard (wow tour, block 8)
+    food_delivery.genie.yml                   Genie space on the gold tables (block 8)
   src/
     generator/generate_events.py              writes orders, GPS, customer CDC and restaurant files (+ planned failures)
     pipelines/streaming/bronze.py             Python: Auto Loader for orders, GPS, customer changes
@@ -66,6 +68,7 @@ demo/
     notebooks/01_batch_ingestion.py           block 5: CSV schema inference, Auto Loader + checkpoints, time travel
     notebooks/02_streaming_live.py            block 6: live-updating stream in a notebook
     analyst/01_analyst_access.sql             block 8: grants for the analysts group, masked columns
+    dashboards/food_delivery.lvdash.json      the dashboard definition (datasets, widgets, layout)
   data/restaurants.csv                        20 fictional Novi Sad restaurants
 ```
 
@@ -158,10 +161,33 @@ databricks bundle run food_delivery_reset -t dev --params confirm=yes
 Deletes all generated files and generator state, stops the streaming pipeline, regenerates the history, then fully
 refreshes the streaming pipeline (it keeps running) and the batch pipeline.
 
+## Dashboard and Genie space
+
+Both are bundle resources and use the SQL warehouse `Serverless Starter Warehouse` (variable `warehouse_id`, looked up
+by name) and the target's catalog (`dataset_catalog` for the dashboard, `${var.catalog}` in the Genie tables).
+
+- **Dashboard** `Food delivery Novi Sad` (`resources/food_delivery.dashboard.yml`,
+  `src/dashboards/food_delivery.lvdash.json`). Page *Overview*: district filter, delivered orders, share of late
+  deliveries, revenue, late deliveries per district and per hour, revenue per restaurant, and the reviews of late
+  orders. Page *Live*: the streaming 5-minute table for the last 3 hours (fills while the generator runs).
+  `embed_credentials: false`, so viewers query with their own permissions (analysts: gold only, masked PII).
+- **Genie space** `Food delivery Novi Sad` (`resources/food_delivery.genie.yml`): the four gold tables without
+  personal data (`deliveries`, `late_deliveries_per_district`, `daily_revenue_per_restaurant`,
+  `avg_delivery_time_per_district_5min`), instructions, sample questions and three example queries. Tested questions:
+  "Why are deliveries late in Liman?" (answers from `review_text`: closed street, couriers getting lost, roadworks)
+  and "Which restaurants had the highest revenue this week?".
+
+After editing either one in the UI, pull the changes back into the files:
+
+```bash
+databricks bundle generate dashboard --resource food_delivery_dashboard --force -t dev
+databricks bundle generate genie-space --existing-id <space-id> --key food_delivery_genie --force -t dev
+```
+
+The Genie API requires `data_sources.tables` sorted by `identifier`, `column_configs` sorted by `column_name`
+and every list of items with an `id` sorted by `id`. Keep that order when you edit the YAML by hand.
+
 ## Not in the bundle (yet)
 
 - **Analysts group** `databricks-ftn-analysts` and a demo analyst user: create in the account console or add to Terraform.
-- **AI/BI dashboard** and **Genie space**: create them once the gold tables have data. Suggested Genie questions:
-  "Which district had the most late deliveries yesterday?", "Which restaurants had the highest revenue this week?",
-  "Why are deliveries late in Liman?" (add `gold.deliveries` so Genie can read `review_text`).
 - **GitHub Actions** deployment on merge to main (optional in block 7).
