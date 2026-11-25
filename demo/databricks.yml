@@ -43,7 +43,7 @@ targets:
     workspace:
       host: https://adb-7405608329558361.1.azuredatabricks.net
     presets:
-      name_prefix: "[dev ${workspace.current_user.short_name}] "
+      name_prefix: ""
       pipelines_development: true
       tags:
         dev: ${workspace.current_user.short_name}
