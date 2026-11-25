@@ -39,11 +39,11 @@ targets:
   # Forked this repo? Replace both `host` values with your workspace URL
   # (the `workspace_url` output of ../infra-terraform).
   dev:
+    mode: development
     default: true
     workspace:
       host: https://adb-7405608329558361.1.azuredatabricks.net
     presets:
-      name_prefix: ""
       pipelines_development: true
       tags:
         dev: ${workspace.current_user.short_name}
