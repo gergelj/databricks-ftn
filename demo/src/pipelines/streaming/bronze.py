@@ -6,6 +6,8 @@
 # It manages the checkpoint and the schema location for us. "landing_path" comes
 # from the pipeline configuration (resources/food_delivery_streaming.pipeline.yml).
 # =============================================================================
+# dp = the Lakeflow pipelines Python API (module pyspark.pipelines, formerly called "dlt").
+# We *declare* the tables we want; the pipeline works out the order, runs them and tracks data quality.
 from pyspark import pipelines as dp
 from pyspark.sql import DataFrame
 from pyspark.sql import functions as F
@@ -13,6 +15,8 @@ from pyspark.sql import functions as F
 LANDING_PATH = spark.conf.get("landing_path")
 
 
+# A normal Python function, not a pipeline table: three tables below read files the same way,
+# so the reading logic is written once and reused. Pipeline code is just Python.
 def auto_loader(folder: str, schema_hints: str) -> DataFrame:
     """Incrementally read new JSON files from a landing folder, with ingestion metadata.
 
@@ -34,6 +38,10 @@ def auto_loader(folder: str, schema_hints: str) -> DataFrame:
     )
 
 
+# @dp.table + a streaming DataFrame (readStream) = a streaming table: each new row is processed once.
+# Same decorator as in the batch pipeline. What makes this pipeline "streaming" is not the code,
+# it's the setting continuous: true in resources/food_delivery_streaming.pipeline.yml.
+#
 # Delivered orders from the app (JSON lines, a new file every few seconds).
 @dp.table(name="bronze.orders", comment="Raw delivered-order events from the delivery app (JSON), ingested with Auto Loader.")
 def bronze_orders():

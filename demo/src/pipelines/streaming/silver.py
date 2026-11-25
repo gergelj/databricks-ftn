@@ -4,7 +4,7 @@
 # No joins with the restaurant catalog here: that is a batch source, refreshed by
 # the batch pipeline. The batch gold tables join orders with restaurants.
 # =============================================================================
-from pyspark import pipelines as dp
+from pyspark import pipelines as dp  # Lakeflow pipelines Python API (formerly "dlt"), see bronze.py
 from pyspark.sql import functions as F
 
 # -----------------------------------------------------------------------------
@@ -14,6 +14,9 @@ from pyspark.sql import functions as F
 # A DELETE closes the customer's current row.
 # Current rows: WHERE __END_AT IS NULL.
 # -----------------------------------------------------------------------------
+# Same three building blocks as the batch silver.py (restaurants):
+#   @dp.temporary_view (helper step) -> dp.create_streaming_table (target) -> dp.create_auto_cdc_flow (the rule)
+# Difference: SCD Type 2 here (keep history) instead of Type 1 (keep only the latest).
 @dp.temporary_view()
 def customer_changes():
     return (
@@ -34,12 +37,13 @@ dp.create_auto_cdc_flow(
     name="customers_scd2",
     target="silver.customers",
     source="customer_changes",
-    keys=["customer_id"],
-    sequence_by="change_ts",
-    apply_as_deletes=F.expr("operation = 'DELETE'"),
-    except_column_list=["operation"],
-    stored_as_scd_type=2,
-    track_history_column_list=["address", "district"],
+    keys=["customer_id"],                                 # what makes two rows "the same customer"
+    sequence_by="change_ts",                              # which change is newer (handles out-of-order events)
+    apply_as_deletes=F.expr("operation = 'DELETE'"),      # rows matching this are treated as a delete
+    except_column_list=["operation"],                     # helper column, not needed in the final table
+    stored_as_scd_type=2,                                 # keep history: a new row per change, with __START_AT/__END_AT
+    track_history_column_list=["address", "district"],    # only these columns create a new history row;
+                                                          # other changes (e.g. phone) update the current row in place
 )
 
 # -----------------------------------------------------------------------------
@@ -56,6 +60,11 @@ ORDER_RULES = {
 }
 
 
+# Expectations = data quality rules, added as extra decorators on top of @dp.table:
+#   @dp.expect(name, rule)          warn only: keep the row, count it in the data quality tab
+#   @dp.expect_or_drop(name, rule)  drop the row (and count it)
+#   @dp.expect_or_fail(name, rule)  stop the pipeline update
+#   ..._all_...(dict)               the same, for several rules at once
 @dp.table(
     name="silver.orders",
     comment="Validated delivered orders with delivery time and lateness (one row per order).",
@@ -90,6 +99,9 @@ def silver_orders():
     )
 
 
+# Quarantine pattern: expectations can drop bad rows, but they don't store them anywhere.
+# This second table reads the same bronze rows and keeps exactly the ones that break a rule,
+# with the name of the rule, so someone can look at them and fix the source.
 @dp.table(name="silver.orders_quarantine", comment="Order events that failed the silver data quality rules, kept for inspection.")
 def silver_orders_quarantine():
     all_rules_pass = " AND ".join(f"({rule})" for rule in ORDER_RULES.values())
@@ -112,7 +124,7 @@ def silver_orders_quarantine():
 @dp.table(
     name="silver.gps_events",
     comment="Courier GPS pings inside the Novi Sad area.",
-    table_properties={"delta.enableChangeDataFeed": "true"},
+    table_properties={"delta.enableChangeDataFeed": "true"},   # Delta records every change, so others can read just the changes
 )
 @dp.expect_all_or_drop({
     "has_courier": "courier_id IS NOT NULL",

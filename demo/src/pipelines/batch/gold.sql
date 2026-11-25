@@ -8,9 +8,23 @@
 -- silver.orders and silver.customers come from the streaming pipeline;
 -- silver.restaurants from this pipeline. The join happens here, so a restaurant
 -- change shows up in all reports on the next run.
+--
+-- The same dp ideas as bronze.py and silver.py, written in SQL (a pipeline can mix both):
+--   CREATE TEMPORARY VIEW               = @dp.temporary_view          (helper step, not stored)
+--   CREATE OR REFRESH MATERIALIZED VIEW = @dp.materialized_view       (stored, recomputed each run)
+--   CREATE OR REFRESH STREAMING TABLE   = @dp.table with readStream   (used in the streaming pipeline)
+-- "OR REFRESH": the pipeline creates the table on the first run and refreshes it on every run after that.
+--
+-- Why materialized views here and not streaming tables?
+--   A streaming table only processes NEW rows, once, and never looks back.
+--   A materialized view stores the result of a query and brings it up to date on every run,
+--   so old rows change too. If a restaurant is renamed tonight, yesterday's revenue
+--   rows show the new name. That's what reports need.
 -- =============================================================================
 
 -- Orders with the current restaurant details. Pipeline-private, not published to Unity Catalog.
+-- An order only knows "restaurant R001"; this join adds the restaurant's name, cuisine and district.
+-- LEFT JOIN: an order for a restaurant we don't know (yet) is kept, with empty restaurant columns.
 CREATE TEMPORARY VIEW orders_enriched AS
 SELECT
   o.*,
@@ -21,6 +35,9 @@ FROM silver.orders o
 LEFT JOIN silver.restaurants r
   ON o.restaurant_id = r.restaurant_id;
 
+-- The column list with COMMENTs is optional: the types come from the query anyway.
+-- We add it because the descriptions end up in Unity Catalog, where people (and Genie) read them.
+-- GROUP BY ALL = group by every column that is not an aggregate (COUNT, SUM, AVG...).
 CREATE OR REFRESH MATERIALIZED VIEW gold.daily_revenue_per_restaurant (
   order_date          DATE   COMMENT 'Day the order was placed (Novi Sad local time)',
   restaurant_id       STRING COMMENT 'Restaurant ID, e.g. R001',
@@ -73,6 +90,9 @@ GROUP BY ALL;
 
 -- Order-level facts without customer PII: for Genie, dashboards and AI functions on review_text.
 CREATE OR REFRESH MATERIALIZED VIEW gold.deliveries (
+  -- Expectation = a data quality rule. Plain EXPECT only warns: the row is kept, and the number of
+  -- rows breaking the rule is shown in the pipeline's data quality tab.
+  -- (ON VIOLATION DROP ROW would drop it, ON VIOLATION FAIL UPDATE would stop the run.)
   CONSTRAINT known_restaurant EXPECT (restaurant_name IS NOT NULL)     -- warn only: keep, but count
 )
 COMMENT 'One row per delivered order, without customer personal data: timing, lateness, restaurant, district, rating and the free-text review.'
@@ -101,6 +121,10 @@ FROM orders_enriched;
 
 -- Current customer profiles. Email and phone are masked for everyone outside the
 -- admin group (the mask function is created by src/setup/00_setup.py).
+-- MASK <function>: a Unity Catalog column mask. Everyone queries the same table; the function
+-- decides per user what they see (the real value for admins, a masked value for everyone else).
+-- ${pii_mask_function} is filled in from the pipeline configuration (resources/food_delivery_batch.pipeline.yml).
+-- __START_AT / __END_AT come from the SCD Type 2 history in silver.customers; __END_AT IS NULL = current row.
 CREATE OR REFRESH MATERIALIZED VIEW gold.customers (
   customer_id   BIGINT COMMENT 'Customer ID',
   customer_name STRING COMMENT 'First and last name',
