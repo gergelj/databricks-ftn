@@ -1,0 +1,16 @@
+# Continuous job: wraps the streaming pipeline so it runs continuously, the pattern Databricks
+# recommends over the pipeline's built-in `continuous` setting. The job restarts the pipeline
+# if it stops, so the pipeline itself stays in triggered mode (no `continuous` setting).
+# In the dev target (`mode: development`) the trigger is deployed paused: unpause it in the Jobs UI
+# to start streaming, and pause it again when you are done. In prod it is deployed unpaused.
+resources:
+  jobs:
+    food_delivery_streaming_job:
+      name: food_delivery_streaming_job
+      description: Runs the streaming pipeline (orders, courier GPS and customer changes) continuously.
+      continuous: {}
+      max_concurrent_runs: 1
+      tasks:
+        - task_key: run_streaming_pipeline
+          pipeline_task:
+            pipeline_id: ${resources.pipelines.food_delivery_streaming.id}

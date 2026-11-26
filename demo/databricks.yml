@@ -26,9 +26,6 @@ variables:
     description: SQL warehouse for the dashboard and the Genie space
     lookup:
       warehouse: Serverless Starter Warehouse
-  streaming_continuous:
-    description: true = the streaming pipeline runs continuously, false = triggered updates. Same code, different trigger.
-    default: true
 
 targets:
   # Personal development copy: resources are prefixed with "[dev <user>]" and deployed to your user folder.

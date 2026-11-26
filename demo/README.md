@@ -19,7 +19,7 @@ This bundle deploys the data project that runs on it.
 | | `food_delivery_streaming` | `food_delivery_batch` |
 |---|---|---|
 | Sources | orders + courier GPS (JSON), customer changes (CDC, JSON) | restaurant catalog (nightly CSV) |
-| Runs | **continuously**: new files are processed within seconds | **triggered**: on demand, daily at 06:00 (`food_delivery_daily_batch`), and when a restaurants file arrives (`food_delivery_on_new_restaurant_file`) |
+| Runs | **continuously**, kept running by the continuous job `food_delivery_streaming_job` (the pipeline itself is triggered): new files are processed within seconds | **triggered**: on demand, daily at 06:00 (`food_delivery_daily_batch`), and when a restaurants file arrives (`food_delivery_on_new_restaurant_file`) |
 | Tables | `bronze.orders`, `bronze.gps_events`, `bronze.customers_cdc`, `silver.orders`, `silver.orders_quarantine`, `silver.gps_events`, `silver.customers` (SCD2), `gold.avg_delivery_time_per_district_5min` | `bronze.restaurants`, `silver.restaurants` (SCD1), `gold.daily_revenue_per_restaurant`, `gold.late_deliveries_per_district`, `gold.deliveries`, `gold.customers` (masked) |
 | Language | bronze + silver in Python, gold in SQL | bronze + silver in Python, gold in SQL |
 
@@ -28,8 +28,8 @@ restaurant catalog and builds the reports (daily revenue). The streaming pipelin
 can run independently; the batch pipeline reads `silver.orders` and `silver.customers` from the streaming one.
 
 ```
-landing.raw (volume)           STREAMING PIPELINE (continuous)                         BATCH PIPELINE (triggered)
---------------------           -------------------------------                         --------------------------
+landing.raw (volume)           STREAMING PIPELINE (continuous job)                     BATCH PIPELINE (triggered)
+--------------------           -----------------------------------                     --------------------------
 orders/*.json        ──▶ bronze.orders ──▶ silver.orders ──┬──▶ gold.avg_delivery_time_   ┌─▶ gold.daily_revenue_per_restaurant
                                  └──────▶ silver.orders_   │    per_district_5min         ├─▶ gold.late_deliveries_per_district
                                           quarantine       └──────────────────────────────┼─▶ gold.deliveries
@@ -38,22 +38,28 @@ customers_cdc/*.json ──▶ bronze.customers_cdc ──▶ silver.customers (
 restaurants/*.csv    ──────────────────────────────▶ bronze.restaurants ─▶ silver.restaurants (SCD1) ─┘
 ```
 
+`silver.gps_events` is also synced continuously to Lakebase (`live.courier_gps`) for the live courier map app.
+
 ## Layout
 
 ```
 demo/
   databricks.yml                              bundle definition, dev + prod targets
   resources/
-    food_delivery_streaming.pipeline.yml      continuous pipeline (serverless)
+    food_delivery_streaming.pipeline.yml      streaming pipeline (serverless, triggered mode)
+    food_delivery_streaming.job.yml           continuous job that keeps the streaming pipeline running
     food_delivery_batch.pipeline.yml          triggered pipeline (serverless)
     daily_batch.job.yml                       batch pipeline every morning at 06:00
     restaurant_refresh.job.yml                batch pipeline when a restaurants file arrives (file-arrival trigger)
     data_generator.job.yml                    the data generator
     demo_setup.job.yml                        one-time setup
     demo_reset.job.yml                        reset everything to a clean state
-    stop_streaming.job.yml                    stop the continuous pipeline
+    stop_streaming.job.yml                    stop the current streaming pipeline update
     food_delivery.dashboard.yml               AI/BI dashboard
     food_delivery.genie.yml                   Genie space on the gold tables
+    live_map.lakebase.yml                     Lakebase project, UC catalog and continuous synced table live.courier_gps
+    courier_map.app.yml                       Databricks App: live courier map (FastAPI + Leaflet)
+    live_map_grants.job.yml                   grants the app read access to the synced table
   src/
     generator/generate_events.py              writes orders, GPS, customer CDC and restaurant files (+ planned failures)
     pipelines/streaming/bronze.py             Python: Auto Loader for orders, GPS, customer changes
@@ -66,10 +72,12 @@ demo/
     setup/start_streaming_pipeline.py         start the streaming pipeline and wait for data (setup/reset jobs)
     setup/stop_streaming_pipeline.py          stop it (reset and stop jobs)
     setup/99_reset.py                         delete generated data (reset job)
+    setup/grant_live_map_access.py            Postgres grants for the app's service principal (live_map_grants job)
     notebooks/01_batch_ingestion.py           CSV schema inference, Auto Loader + checkpoints, time travel
     notebooks/02_streaming_live.py            live-updating stream in a notebook
     analyst/01_analyst_access.sql             grants for the analysts group, masked columns
     dashboards/food_delivery.lvdash.json      the dashboard definition (datasets, widgets, layout)
+    apps/courier_map/                         the courier map app (app.py, app.yaml, static/index.html)
   data/restaurants.csv                        20 fictional Novi Sad restaurants
 ```
 
@@ -101,8 +109,11 @@ databricks bundle deploy   -t dev
 databricks bundle run food_delivery_setup -t dev   # schemas, history, starts streaming, runs batch once
 ```
 
-**Cost:** the streaming pipeline is continuous: once started it runs until you stop it
-(`databricks bundle run stop_streaming -t dev`). Stop it whenever you are done.
+**Cost:** `food_delivery_streaming_job` is a continuous job. In the dev target it is deployed **paused**
+(`mode: development`), so nothing runs until you unpause it in the Jobs UI. Once unpaused it restarts the streaming
+pipeline whenever it stops, so it runs (and costs serverless compute) until you pause the job again. Pause it when
+you are done. `databricks bundle run stop_streaming -t dev` only stops the current pipeline update; an unpaused job
+then starts a new one.
 
 Start the data generator a few minutes before you want to look at live data, so new files keep arriving.
 After a fresh deploy, wait a couple of minutes before the first file drop: the file-arrival trigger's first check
@@ -114,12 +125,12 @@ A suggested order, from platform to answers:
 
 | Step | What to do |
 |---|---|
-| 1. Look around | Jobs & Pipelines: `[dev ...] food_delivery_streaming` (running) and `food_delivery_batch`, their graphs, the dashboard and the Genie space. |
+| 1. Look around | Jobs & Pipelines: `[dev ...] food_delivery_streaming_job` (continuous), the pipeline it runs, `food_delivery_streaming` (running), and `food_delivery_batch`, their graphs, the dashboard and the Genie space. |
 | 2. Unity Catalog | Catalog Explorer: `databricks_ftn_catalog` → the `landing.raw` volume, `silver.orders` (history, lineage). |
 | 3. Batch | Notebook `01_batch_ingestion`. Then the batch pipeline (`src/pipelines/batch/`, graph, `databricks bundle run food_delivery_batch -t dev`). |
 | 4. Data quality | Run the generator with `mode=bad_records`. Before you look, guess what the pipeline will do. The running streaming pipeline handles the rows within seconds: see the data quality tab of `silver.orders` and `silver.orders_quarantine`. |
 | 5. Orchestration | Run the generator with `mode=nightly_restaurants`. `food_delivery_on_new_restaurant_file` starts by itself after about 2 minutes (the trigger checks every minute and waits 60 s after the last change); the new restaurant (Poke Bowl Liman) appears in `silver.restaurants`. The schedule is on `food_delivery_daily_batch`. |
-| 6. Streaming | Start the generator (`databricks bundle run data_generator -t dev --params duration_minutes=40`). Notebook `02_streaming_live` on a classic cluster (live counter). Then the streaming pipeline (`src/pipelines/streaming/`): the counts in its graph keep growing. Same code style as the batch pipeline (Auto Loader, Python + SQL), different trigger: `continuous: true`. Planned failures: `mode=late_event` (watermark), `mode=schema_change` (`tip_amount` appears in `bronze.orders`). |
+| 6. Streaming | Start the generator (`databricks bundle run data_generator -t dev --params duration_minutes=40`). Notebook `02_streaming_live` on a classic cluster (live counter). Then the streaming pipeline (`src/pipelines/streaming/`): the counts in its graph keep growing. Same code style as the batch pipeline (Auto Loader, Python + SQL), different trigger: a continuous job instead of a schedule or file arrival. Planned failures: `mode=late_event` (watermark), `mode=schema_change` (`tip_amount` appears in `bronze.orders`). |
 | 7. Bundles | `databricks.yml`, `resources/`, `bundle validate`, `bundle deploy`. Try a change: add `o.tip_amount` to `silver.orders`, deploy, refresh. |
 | 8. Analyst view | `src/analyst/01_analyst_access.sql` (grants, masking), lineage of `gold.late_deliveries_per_district`, the dashboard, Genie, then the saved queries in `/Shared/databricks-ftn-analyst-queries` (`ai_classify` on review texts, district dropdown). They are Terraform `databricks_query` resources in `../infra-terraform/analyst_queries.tf`. |
 
@@ -149,11 +160,12 @@ All three sources at a glance:
 
 Things to know:
 
-- **Batch vs streaming is one setting.** The two pipelines use the same building blocks; only `continuous` differs.
-  To run the streaming pipeline as triggered updates instead (cheaper while you build), deploy with
-  `--var streaming_continuous=false` and run it with `databricks bundle run food_delivery_streaming -t dev`.
-- A continuous pipeline can't be a job's pipeline task, so the setup and reset jobs start it with a small notebook
-  (`src/setup/start_streaming_pipeline.py`) that waits until the backfill is in `silver.orders`.
+- **Batch vs streaming is only the trigger.** The two pipelines use the same building blocks and are both triggered;
+  the continuous job `food_delivery_streaming_job` keeps the streaming pipeline running. For a single triggered update
+  instead (cheaper while you build), pause that job and run `databricks bundle run food_delivery_streaming -t dev`.
+- The setup and reset jobs start (or fully refresh) the streaming pipeline with a small notebook
+  (`src/setup/start_streaming_pipeline.py`) that waits until the backfill is in `silver.orders`, so the batch pipeline
+  runs on fresh data. If the continuous job is already running the pipeline, the notebook only waits for the data.
 - Gold reports only change when the batch pipeline runs. New orders show up in `silver.orders` and the 5-minute table
   right away, and in `gold.deliveries` / `gold.daily_revenue_per_restaurant` after the next batch run.
 - The 5-minute streaming gold table only writes a window once it is closed: the newest `delivered_ts` must be
@@ -168,7 +180,18 @@ databricks bundle run food_delivery_reset -t dev --params confirm=yes
 ```
 
 Deletes all generated files and generator state, stops the streaming pipeline, regenerates the history, then fully
-refreshes the streaming pipeline (it keeps running) and the batch pipeline.
+refreshes the streaming pipeline and the batch pipeline. The continuous job `food_delivery_streaming_job` restarts
+the pipeline as soon as it is stopped, so pause the job before the reset and unpause it afterwards for a clean run.
+
+## Live courier map (Lakebase + Databricks App)
+
+`silver.gps_events` is synced continuously to the Lakebase project `food-delivery-live` (Postgres table
+`live.courier_gps`, scales to zero after 5 idle minutes). The app `courier-map` reads it and shows the couriers on a map.
+
+```bash
+databricks bundle run courier_map -t dev        # deploy the app source code and start the app
+databricks bundle run live_map_grants -t dev    # once: let the app read the synced table
+```
 
 ## Dashboard and Genie space
 
