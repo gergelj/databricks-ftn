@@ -1,12 +1,12 @@
 # One-time setup after the first deploy:
 #   databricks bundle run food_delivery_setup -t dev
-# Creates schemas, volumes and the mask function, writes 7 days of history, starts the
-# streaming pipeline (and waits for the data), then runs the batch pipeline once.
+# Creates schemas, volumes and the mask function, writes 7 days of history, runs the
+# streaming job (food_delivery_streaming_job) and waits for it, then runs the batch pipeline once.
 resources:
   jobs:
     food_delivery_setup:
       name: food_delivery_setup
-      description: Creates the demo schemas and landing volume, backfills history, starts the streaming pipeline and runs the batch pipeline.
+      description: Creates the demo schemas and landing volume, backfills history, runs the streaming job and runs the batch pipeline.
       max_concurrent_runs: 1
       parameters:
         - name: catalog
@@ -32,13 +32,13 @@ resources:
             - task_key: create_schemas_and_volume
           notebook_task:
             notebook_path: ../src/generator/generate_events.py
-        - task_key: start_streaming_pipeline
+        - task_key: run_streaming_job
           depends_on:
             - task_key: backfill_history
-          notebook_task:
-            notebook_path: ../src/setup/start_streaming_pipeline.py
+          run_job_task:
+            job_id: ${resources.jobs.food_delivery_streaming_job.id}
         - task_key: run_batch_pipeline
           depends_on:
-            - task_key: start_streaming_pipeline
+            - task_key: run_streaming_job
           pipeline_task:
             pipeline_id: ${resources.pipelines.food_delivery_batch.id}
