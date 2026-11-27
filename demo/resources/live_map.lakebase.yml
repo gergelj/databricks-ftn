@@ -16,6 +16,7 @@ resources:
         autoscaling_limit_min_cu: 0.5
         autoscaling_limit_max_cu: 1
         suspend_timeout_duration: 300s   # scale to zero after 5 idle minutes
+      purge_on_delete: true  # not recommended for production, dev/learning purposes okay
 
   # Registers the Lakebase database in Unity Catalog, so synced tables can target it.
   postgres_catalogs:
